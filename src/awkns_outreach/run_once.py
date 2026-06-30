@@ -18,7 +18,7 @@ TEST_LEAD = {
 if __name__ == "__main__":
     print("Running outreach crew for test lead...")
     result = OutreachCrew().run(TEST_LEAD)
-    out = Path("outputs/test_Sunny_Nails.md")
+    out = Path(__file__).parent.parent.parent / "outputs" / "test_Sunny_Nails.md"
     out.write_text(result, encoding="utf-8")
     print(f"\nDraft saved to {out}")
     print("\n--- DRAFT ---")

@@ -9,7 +9,7 @@ def test_sanitize_filename_spaces():
 
 
 def test_sanitize_filename_special_chars():
-    assert sanitize_filename("Bob's Café & Grill!") == "Bobs_Caf_Grill"
+    assert sanitize_filename("Bob's Café & Grill!") == "Bobs_Cafe_Grill"
 
 
 def test_sanitize_filename_multiple_spaces():

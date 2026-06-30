@@ -7,6 +7,7 @@ from awkns_outreach.tools.sheets_tool import get_unprocessed_leads, mark_as_draf
 @pytest.fixture
 def mock_worksheet():
     ws = MagicMock()
+    ws.row_values.return_value = ["Shop Name", "Industry", "Website", "Social Media", "Contact Name", "Email", "Phone", "City", "State", "Status", "Last Contact Date", "Next Follow Up", "Notes"]
     ws.get_all_records.return_value = [
         {
             "Shop Name": "Sunny Nails",

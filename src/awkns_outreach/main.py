@@ -2,6 +2,7 @@
 import logging
 import os
 import re
+import unicodedata
 from datetime import date
 from pathlib import Path
 
@@ -31,8 +32,12 @@ log = logging.getLogger(__name__)
 
 
 def sanitize_filename(name: str) -> str:
-    """Replace spaces with underscores and remove non-alphanumeric chars."""
-    name = re.sub(r"[^\w\s]", "", name, flags=re.ASCII)
+    """Replace spaces with underscores and remove non-alphanumeric chars.
+
+    Normalizes Unicode (e.g., 'Café' → 'Cafe') before sanitizing.
+    """
+    name = unicodedata.normalize("NFKD", name).encode("ascii", "ignore").decode("ascii")
+    name = re.sub(r"[^\w\s]", "", name)
     name = re.sub(r"\s+", "_", name.strip())
     return name
 

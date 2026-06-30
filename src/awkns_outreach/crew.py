@@ -15,7 +15,7 @@ _INSTRUCTIONS_DIR = Path(__file__).parent / "instructions"
 
 llm = ChatAnthropic(
     model="claude-sonnet-4-6",
-    api_key=os.environ["ANTHROPIC_API_KEY"],
+    api_key=os.getenv("ANTHROPIC_API_KEY", "placeholder"),
 )
 
 

@@ -10,6 +10,7 @@ dependencies = [
     "crewai-tools>=1.15.1",
     "google-auth>=2.55.1",
     "gspread>=6.2.1",
+    "langchain-anthropic>=1.4.8",
     "python-dotenv>=1.2.2",
     "schedule>=1.2.2",
 ]

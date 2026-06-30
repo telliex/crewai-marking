@@ -12,11 +12,6 @@ _SCOPES = [
     "https://www.googleapis.com/auth/drive.readonly",
 ]
 
-# Column positions (1-indexed) matching the sheet schema
-_COL_STATUS = 10
-_COL_LAST_CONTACT = 11
-
-
 def _get_worksheet() -> gspread.Worksheet:
     creds = Credentials.from_service_account_file(
         os.environ["GOOGLE_SERVICE_ACCOUNT_JSON"], scopes=_SCOPES
@@ -49,8 +44,16 @@ def get_unprocessed_leads() -> list[dict]:
     return leads
 
 
+def _get_col_index(ws: gspread.Worksheet, header_name: str) -> int:
+    """Return 1-indexed column number for the given header name."""
+    headers = ws.row_values(1)
+    return headers.index(header_name) + 1
+
+
 def mark_as_drafted(row_index: int) -> None:
     """Set Status='Drafted' and Last Contact Date=today for the given row."""
     ws = _get_worksheet()
-    ws.update_cell(row_index, _COL_STATUS, "Drafted")
-    ws.update_cell(row_index, _COL_LAST_CONTACT, str(date.today()))
+    status_col = _get_col_index(ws, "Status")
+    date_col = _get_col_index(ws, "Last Contact Date")
+    ws.update_cell(row_index, status_col, "Drafted")
+    ws.update_cell(row_index, date_col, str(date.today()))
