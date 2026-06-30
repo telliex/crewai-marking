@@ -1,0 +1,38 @@
+lead_profiling_task:
+  description: >
+    Research the company {lead_name} in the {industry} industry.
+    Start with their website ({website}) and social media ({social_media}) if available.
+    Find: company background, what service they primarily offer, who {key_decision_maker} is,
+    any recent milestones, awards, expansions, or notable achievements.
+    Note the city ({city}, {state}) for geographic context.
+    Additional notes from our records: {notes}
+    Do not fabricate information. Only report what you find with confidence.
+  expected_output: >
+    A structured markdown profile with these sections:
+    ## Company Overview
+    ## Key Decision Maker
+    ## Primary Service (inferred)
+    ## Recent Milestones / Notable Details
+    ## Personalization Hooks (2-3 specific details to reference in the email)
+
+personalized_outreach_task:
+  description: >
+    Using the research profile for {lead_name}, write a personalized cold email.
+    Use the Tier {tier} template from the instructions folder as your base.
+    Fill in all variables:
+    - {{company_name}} = {lead_name}
+    - {{first_name}} = first name of {key_decision_maker}
+    - {{service}} = primary service inferred from research
+    Where the template allows personalization, add one specific detail from the research
+    (a milestone, a product, a social media observation) to make the email feel genuine.
+    Sign off as pounds.network / Awkns.
+    Output the final email with subject line and body only — no explanations.
+  expected_output: >
+    A complete email draft in this format:
+    Subject: [subject line here]
+
+    [email body here]
+
+    Best,
+    pounds.network
+    Awkns
