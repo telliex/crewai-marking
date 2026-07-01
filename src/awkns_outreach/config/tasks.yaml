@@ -19,10 +19,10 @@ personalized_outreach_task:
   description: >
     Using the research profile for {lead_name}, write a personalized cold email.
     Use the Tier {tier} template from the instructions folder as your base.
-    Fill in all variables:
-    - {{company_name}} = {lead_name}
-    - {{first_name}} = first name of {key_decision_maker}
-    - {{service}} = primary service inferred from research
+    Fill in all template placeholders:
+    - company_name = {lead_name}
+    - first_name = first name of {key_decision_maker}
+    - service = primary service inferred from research
     Where the template allows personalization, add one specific detail from the research
     (a milestone, a product, a social media observation) to make the email feel genuine.
     Sign off as pounds.network / Awkns.
