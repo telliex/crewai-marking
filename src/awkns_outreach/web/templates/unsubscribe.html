@@ -1,0 +1,21 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Unsubscribe</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-slate-50 text-slate-800">
+  <div class="max-w-md mx-auto mt-24 rounded border bg-white p-6 text-center">
+    {% if ok %}
+    <h1 class="text-lg font-semibold mb-2">You're unsubscribed</h1>
+    <p class="text-sm text-slate-600">We won't email you again. Sorry for the intrusion.</p>
+    {% else %}
+    <h1 class="text-lg font-semibold mb-2">Link not valid</h1>
+    <p class="text-sm text-slate-600">This unsubscribe link is invalid or expired. If you keep
+      getting mail, just reply with "unsubscribe" and we'll take care of it.</p>
+    {% endif %}
+  </div>
+</body>
+</html>

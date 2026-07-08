@@ -1,0 +1,39 @@
+{% extends "base.html" %}
+{% block title %}New campaign{% endblock %}
+{% block content %}
+<a href="/" class="text-xs text-slate-500 hover:underline">&larr; Campaigns</a>
+<h1 class="text-lg font-semibold mb-4">New campaign</h1>
+
+<form method="post" action="/campaigns" enctype="multipart/form-data" class="max-w-xl space-y-4">
+  <div>
+    <label class="block text-sm font-medium mb-1">Name</label>
+    <input name="name" required class="w-full border rounded px-2 py-1.5" placeholder="e.g. JP animation studios">
+  </div>
+  <div>
+    <label class="block text-sm font-medium mb-1">Target titles</label>
+    <textarea name="titles" rows="3" class="w-full border rounded px-2 py-1.5"
+      placeholder="one per line, or comma-separated&#10;creative director&#10;head of content"></textarea>
+  </div>
+  <div>
+    <label class="block text-sm font-medium mb-1">Seed companies <span class="text-slate-400 font-normal">(optional — add or edit later)</span></label>
+    <p class="text-xs text-slate-500 mb-1">
+      Upload a <b>JSON</b> array or <b>CSV</b>. Columns: name, website, country, category, priority, angle
+      (all optional; only <code>website</code> is used to query Apollo).
+    </p>
+    <input type="file" name="seed_file" accept=".json,.csv"
+      class="block w-full text-sm mb-2 file:mr-2 file:rounded file:border file:bg-white file:px-2 file:py-1">
+    <textarea name="seed_text" rows="4" class="w-full border rounded px-2 py-1.5 font-mono text-xs"
+      placeholder='…or paste JSON/CSV here, e.g.&#10;[{"name":"Toyota","website":"toyota.co.jp","country":"JP","priority":"A"}]'></textarea>
+  </div>
+  <div>
+    <label class="block text-sm font-medium mb-1">Angle prompt <span class="text-slate-400 font-normal">(optional)</span></label>
+    <textarea name="angle_prompt" rows="2" class="w-full border rounded px-2 py-1.5"
+      placeholder="Leave blank to use the default research prompt."></textarea>
+  </div>
+  <button class="rounded bg-slate-900 text-white text-sm px-4 py-2">Create campaign</button>
+</form>
+<p class="text-xs text-slate-500 mt-4">
+  Seed companies can be edited field-by-field after creation. Sequence copy &amp;
+  sender identity are edited on the campaign after creation (JSON for now; a form is a follow-up).
+</p>
+{% endblock %}

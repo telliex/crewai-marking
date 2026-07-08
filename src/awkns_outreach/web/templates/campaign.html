@@ -1,0 +1,81 @@
+{% extends "base.html" %}
+{% block title %}{{ c.name }} — Awkns Outreach{% endblock %}
+{% block content %}
+<div class="mb-4">
+  <a href="/" class="text-xs text-slate-500 hover:underline">&larr; Campaigns</a>
+  <h1 class="text-lg font-semibold">{{ c.name }}</h1>
+  <p class="text-xs text-slate-500">
+    Titles: {{ c.target_titles|join(", ") or "—" }} ·
+    Companies: {{ c.seed_companies|length }}
+    <a href="/campaigns/{{ c.id }}/companies" class="underline hover:text-slate-700">Edit companies</a>
+  </p>
+</div>
+
+<div class="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
+  {% for label, key in [("Total","total"),("Active","active"),("Completed","completed"),("Suppressed","suppressed")] %}
+  <div class="rounded border bg-white px-3 py-2">
+    <div class="text-xs text-slate-500">{{ label }}</div>
+    <div class="text-xl font-semibold">
+      {{ stats.total if key == "total" else stats.by_status[key] }}
+    </div>
+  </div>
+  {% endfor %}
+</div>
+
+<div class="rounded border bg-white px-3 py-2 mb-6 text-sm text-slate-600 flex items-center gap-3">
+  <span>Sent last 24h: <b>{{ stats.sent_last_24h }}</b> · Daily cap: <b>{{ stats.cap }}</b> ·
+  Remaining today: <b>{{ stats.daily_remaining }}</b> · Sequence steps: <b>{{ stats.steps }}</b></span>
+  <a href="/campaigns/{{ c.id }}/sequence"
+     class="ml-auto rounded border bg-white text-xs px-2 py-1 hover:bg-slate-50">
+    {% if stats.steps %}Edit sequence{% else %}⚠ Set up sequence{% endif %}
+  </a>
+</div>
+{% if not stats.steps %}
+<div class="mb-6 rounded border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
+  This campaign has no email sequence yet — <a href="/campaigns/{{ c.id }}/sequence" class="underline font-medium">set it up</a> before running, or nothing will send.
+</div>
+{% endif %}
+
+<div class="flex flex-wrap gap-3 mb-8">
+  <form method="post" action="/campaigns/{{ c.id }}/enrich" class="rounded border bg-white p-3">
+    <div class="text-xs font-medium text-slate-500 mb-2">Apollo enrich</div>
+    <label class="text-xs">Limit <input name="limit" type="number" value="10" class="w-16 border rounded px-1 py-0.5"></label>
+    <label class="text-xs ml-2"><input name="reveal" type="checkbox" value="1"> reveal (spends credits)</label>
+    <button class="ml-2 rounded bg-slate-900 text-white text-xs px-2 py-1">Run</button>
+  </form>
+
+  <form method="post" action="/campaigns/{{ c.id }}/run" class="rounded border bg-white p-3">
+    <div class="text-xs font-medium text-slate-500 mb-2">Sequencer</div>
+    <label class="text-xs">Max <input name="max_this_run" type="number" value="5" class="w-16 border rounded px-1 py-0.5"></label>
+    <label class="text-xs ml-2"><input name="send" type="checkbox" value="1"> send for real</label>
+    <button class="ml-2 rounded bg-slate-900 text-white text-xs px-2 py-1">Run</button>
+  </form>
+</div>
+
+<h2 class="text-sm font-semibold mb-2">Leads ({{ leads|length }})</h2>
+<div class="overflow-x-auto rounded border bg-white">
+  <table class="w-full text-sm">
+    <thead class="bg-slate-100 text-slate-500 text-left">
+      <tr>
+        <th class="px-3 py-2">Email</th><th class="px-3 py-2">Company</th>
+        <th class="px-3 py-2">Contact</th><th class="px-3 py-2">Step</th>
+        <th class="px-3 py-2">Status</th><th class="px-3 py-2">Next action</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for l in leads %}
+      <tr class="border-t">
+        <td class="px-3 py-2">{{ l.email }}</td>
+        <td class="px-3 py-2">{{ l.company }}</td>
+        <td class="px-3 py-2">{{ l.contact_name or "—" }}{% if l.contact_title %} <span class="text-slate-400">· {{ l.contact_title }}</span>{% endif %}</td>
+        <td class="px-3 py-2">{{ l.step }}</td>
+        <td class="px-3 py-2"><span class="rounded px-1.5 py-0.5 text-xs bg-slate-100">{{ l.status }}</span></td>
+        <td class="px-3 py-2 text-slate-500">{{ l.next_action_at.strftime("%Y-%m-%d") if l.next_action_at else "—" }}</td>
+      </tr>
+      {% else %}
+      <tr><td colspan="6" class="px-3 py-4 text-slate-400">No leads yet — run enrich with “reveal”.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}

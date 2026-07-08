@@ -1,0 +1,81 @@
+{% extends "base.html" %}
+{% block title %}Edit companies — {{ c.name }}{% endblock %}
+
+{% macro company_row(co) %}
+<tr class="company-row border-t">
+  <td class="px-2 py-1"><input name="name" value="{{ co.name or '' }}" class="w-full border rounded px-1.5 py-1 text-sm" placeholder="Toyota"></td>
+  <td class="px-2 py-1"><input name="website" value="{{ co.website or '' }}" class="w-full border rounded px-1.5 py-1 text-sm" placeholder="toyota.co.jp"></td>
+  <td class="px-2 py-1"><input name="country" value="{{ co.country or '' }}" class="w-full border rounded px-1.5 py-1 text-sm" placeholder="JP"></td>
+  <td class="px-2 py-1"><input name="category" value="{{ co.category or '' }}" class="w-full border rounded px-1.5 py-1 text-sm" placeholder="automotive"></td>
+  <td class="px-2 py-1"><input name="priority" value="{{ co.priority or '' }}" class="w-16 border rounded px-1.5 py-1 text-sm" placeholder="A"></td>
+  <td class="px-2 py-1"><input name="angle" value="{{ co.angle or '' }}" class="w-full border rounded px-1.5 py-1 text-sm" placeholder="why this fits them"></td>
+  <td class="px-2 py-1 text-right"><button type="button" onclick="removeRow(this)" class="text-xs text-red-600 hover:underline">Remove</button></td>
+</tr>
+{% endmacro %}
+
+{% block content %}
+<div class="mb-4">
+  <a href="/campaigns/{{ c.id }}" class="text-xs text-slate-500 hover:underline">&larr; {{ c.name }}</a>
+  <h1 class="text-lg font-semibold">Seed companies <span class="text-slate-400 text-sm font-normal">({{ companies|length }})</span></h1>
+  <p class="text-xs text-slate-500">All fields optional; only <code>website</code> is used to query Apollo. Apollo-returned facts overwrite these on conflict.</p>
+</div>
+
+<!-- Field-by-field editor: one save writes the whole list. -->
+<form method="post" action="/campaigns/{{ c.id }}/companies">
+  <input type="hidden" name="action" value="save">
+  <div class="overflow-x-auto rounded border bg-white mb-3">
+    <table class="w-full text-sm">
+      <thead class="bg-slate-100 text-slate-500 text-left text-xs">
+        <tr>
+          <th class="px-2 py-2">Name</th><th class="px-2 py-2">Website</th>
+          <th class="px-2 py-2">Country</th><th class="px-2 py-2">Category</th>
+          <th class="px-2 py-2">Priority</th><th class="px-2 py-2">Angle</th><th></th>
+        </tr>
+      </thead>
+      <tbody id="rows">
+        {% for co in companies %}{{ company_row(co) }}{% endfor %}
+      </tbody>
+    </table>
+  </div>
+  <div class="flex flex-wrap gap-2 mb-8">
+    <button type="button" onclick="addRow()" class="rounded border bg-white text-sm px-3 py-1.5">+ Add company</button>
+    <button type="submit" class="rounded bg-slate-900 text-white text-sm px-4 py-1.5">Save companies</button>
+  </div>
+</form>
+
+<template id="row-tpl"><table><tbody>{{ company_row({}) }}</tbody></table></template>
+
+<!-- Import: file upload or pasted JSON/CSV, replacing or appending. -->
+<div class="rounded border bg-white p-4 mb-4 max-w-xl">
+  <h2 class="text-sm font-semibold mb-2">Import companies</h2>
+  <form method="post" action="/campaigns/{{ c.id }}/companies" enctype="multipart/form-data" class="space-y-2">
+    <input type="hidden" name="action" value="import">
+    <p class="text-xs text-slate-500">JSON array or CSV · columns: name, website, country, category, priority, angle</p>
+    <input type="file" name="seed_file" accept=".json,.csv"
+      class="block w-full text-sm file:mr-2 file:rounded file:border file:bg-white file:px-2 file:py-1">
+    <textarea name="seed_text" rows="3" class="w-full border rounded px-2 py-1.5 font-mono text-xs"
+      placeholder='…or paste JSON/CSV here'></textarea>
+    <div class="flex items-center gap-3 text-sm">
+      <label class="text-xs"><input type="radio" name="import_mode" value="replace" checked> Replace</label>
+      <label class="text-xs"><input type="radio" name="import_mode" value="append"> Append</label>
+      <button type="submit" class="ml-auto rounded bg-slate-900 text-white text-xs px-3 py-1.5">Import</button>
+    </div>
+  </form>
+</div>
+
+<!-- Clear all. -->
+<form method="post" action="/campaigns/{{ c.id }}/companies"
+      onsubmit="return confirm('Clear ALL seed companies for this campaign?');">
+  <input type="hidden" name="action" value="clear">
+  <button type="submit" class="rounded border border-red-200 text-red-600 text-sm px-3 py-1.5 hover:bg-red-50">Clear all companies</button>
+</form>
+
+<script>
+  function addRow() {
+    const tpl = document.getElementById('row-tpl');
+    const row = tpl.content.querySelector('.company-row').cloneNode(true);
+    document.getElementById('rows').appendChild(row);
+  }
+  function removeRow(btn) { btn.closest('.company-row').remove(); }
+</script>
+{% endblock %}

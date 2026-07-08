@@ -1,0 +1,49 @@
+"""parse_seed_companies: JSON and CSV import into canonical seed dicts."""
+import pytest
+
+from awkns_outreach.apollo.seed import parse_seed_companies
+
+
+def test_parse_json_array_normalizes_website_and_aliases():
+    raw = (
+        '[{"company": "Toyota", "url": "https://www.toyota.co.jp",'
+        ' "industry": "automotive", "tier": "A", "angle": "cars"},'
+        ' {"name": "Sony", "website": "sony.co.jp"}]'
+    )
+    out = parse_seed_companies(raw, "companies.json")
+    assert out == [
+        {"name": "Toyota", "website": "toyota.co.jp",
+         "category": "automotive", "priority": "A", "angle": "cars"},
+        {"name": "Sony", "website": "sony.co.jp"},
+    ]
+
+
+def test_parse_single_json_object_wrapped():
+    out = parse_seed_companies('{"name": "Solo", "website": "solo.io"}', None)
+    assert out == [{"name": "Solo", "website": "solo.io"}]
+
+
+def test_parse_csv_drops_blank_rows_and_trims():
+    raw = "name,website,country\nToyota, toyota.co.jp ,JP\n,,\nSony,sony.co.jp,JP\n"
+    out = parse_seed_companies(raw, "seed.csv")
+    assert out == [
+        {"name": "Toyota", "website": "toyota.co.jp", "country": "JP"},
+        {"name": "Sony", "website": "sony.co.jp", "country": "JP"},
+    ]
+
+
+def test_parse_row_without_website_is_kept_but_has_no_domain():
+    # A metadata-only row survives (website is optional); enrich will skip it
+    # at query time since it can't derive a domain.
+    out = parse_seed_companies('[{"name": "NoSite", "priority": "C"}]', None)
+    assert out == [{"name": "NoSite", "priority": "C"}]
+
+
+def test_parse_empty_returns_empty():
+    assert parse_seed_companies("", None) == []
+    assert parse_seed_companies("   ", "x.json") == []
+
+
+def test_parse_bad_json_raises():
+    with pytest.raises(ValueError):
+        parse_seed_companies("{not json", "x.json")
