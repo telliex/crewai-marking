@@ -181,6 +181,16 @@ def test_edit_template_page_prefills_preview_from_saved_body(client, session):
     assert "Hi Jamie," in r.text
 
 
+def test_edit_page_msg_does_not_leak_into_test_send_status(client, session):
+    t = EmailTemplate(name="Intro", subject="s", body="b")
+    session.add(t)
+    session.commit()
+
+    r = client.get(f"/templates/{t.id}/edit?msg=Template saved.", auth=AUTH)
+    assert r.status_code == 200
+    assert r.text.count("Template saved.") == 1
+
+
 def test_edit_archived_template_blocked_get_and_post(client, session):
     t = EmailTemplate(name="Frozen", subject="s", body="b", status="archived")
     session.add(t)
