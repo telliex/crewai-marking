@@ -102,3 +102,39 @@ def test_preview_fragment_renders_example_contact_without_saved_template(client,
     assert "hi Acme Studios" in r.text
     assert "Hi Jamie," in r.text
     assert session.query(EmailTemplate).count() == 0  # no template was created/required
+
+
+@respx.mock
+def test_test_send_fragment_posts_to_resend_when_no_mailbox_selected(client, session):
+    route = respx.post("https://api.resend.com/emails").mock(
+        return_value=httpx.Response(200, json={"id": "resend-1"})
+    )
+    r = client.post("/templates/test-send-fragment", auth=AUTH, data={
+        "subject": "s", "body": "b", "mailbox_id": "",
+    })
+    assert r.status_code == 200
+    assert route.called
+    sent_body = route.calls.last.request.content.decode()
+    assert settings.outreach_from in sent_body
+    assert f"Test email sent! Check your inbox at {settings.outreach_from}." in r.text
+
+
+@respx.mock
+def test_test_send_fragment_uses_gmail_mailbox_recipient(client, session):
+    mb = Mailbox(
+        email="steven@gmail.com", access_token="at", refresh_token="rt",
+        token_expiry=datetime.now(timezone.utc) + timedelta(hours=1), status="connected",
+    )
+    session.add(mb)
+    session.commit()
+
+    gmail_route = respx.post("https://gmail.googleapis.com/gmail/v1/users/me/messages/send").mock(
+        return_value=httpx.Response(200, json={"id": "g1", "threadId": "t1"})
+    )
+    r = client.post("/templates/test-send-fragment", auth=AUTH, data={
+        "subject": "s", "body": "b", "mailbox_id": mb.id,
+    })
+    assert r.status_code == 200
+    assert gmail_route.called
+    assert f"Test email sent! Check your inbox at {mb.email}." in r.text
+    assert f'value="{mb.id}" selected' in r.text  # selection preserved after swap

@@ -79,6 +79,22 @@ def preview_fragment(
     )
 
 
+@router.post("/templates/test-send-fragment", response_class=HTMLResponse)
+def test_send_fragment(
+    request: Request, subject: str = Form(""), body: str = Form(""),
+    mailbox_id: str = Form(""), db: Session = Depends(get_db),
+):
+    msg = _send_test_email(db, subject, body, mailbox_id)
+    return templates.TemplateResponse(
+        request, "_template_test_send_fragment.html",
+        {
+            "mailboxes": _connected_mailboxes(db),
+            "msg": msg,
+            "selected_mailbox_id": mailbox_id or None,
+        },
+    )
+
+
 @router.get("/templates", response_class=HTMLResponse)
 def list_templates(request: Request, db: Session = Depends(get_db), msg: Optional[str] = None):
     items = db.scalars(select(EmailTemplate).order_by(EmailTemplate.created_at.desc())).all()

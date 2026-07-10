@@ -1,0 +1,18 @@
+<div id="test-send-widget" class="flex flex-col gap-2">
+  <div class="flex items-center gap-2">
+    <select name="mailbox_id" id="mailbox-field" class="border rounded px-2 py-1.5 text-sm">
+      <option value="">Resend (default)</option>
+      {% for mb in mailboxes %}
+      <option value="{{ mb.id }}" {% if selected_mailbox_id and mb.id == selected_mailbox_id %}selected{% endif %}>{{ mb.email }}</option>
+      {% endfor %}
+    </select>
+    <button type="button"
+            hx-post="/templates/test-send-fragment"
+            hx-include="#subject-field,#body-field,#mailbox-field"
+            hx-target="#test-send-widget" hx-swap="outerHTML"
+            class="rounded bg-yellow-400 hover:bg-yellow-300 text-slate-900 text-sm font-medium px-4 py-2">
+      Send Test Email to Me
+    </button>
+  </div>
+  {% if msg %}<div class="text-xs text-slate-600">{{ msg }}</div>{% endif %}
+</div>
