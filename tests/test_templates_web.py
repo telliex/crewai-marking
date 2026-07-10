@@ -207,3 +207,71 @@ def test_edit_archived_template_blocked_get_and_post(client, session):
     assert post_r.headers["location"].startswith("/templates?msg=")
     session.refresh(t)
     assert t.name == "Frozen"  # unchanged
+
+
+def test_list_shows_truncated_content_column(client, session):
+    long_body = "word " * 30  # well over 70 chars once collapsed
+    t = EmailTemplate(name="Long one", subject="s", body=long_body.strip())
+    session.add(t)
+    session.commit()
+
+    r = client.get("/templates", auth=AUTH)
+    assert r.status_code == 200
+    assert "…" in r.text
+    assert long_body.strip() in r.text  # full text still present, e.g. in a title attribute
+
+
+def test_clone_template_creates_copy_and_redirects_to_its_edit_page(client, session):
+    t = EmailTemplate(name="Intro", subject="s", body="b")
+    session.add(t)
+    session.commit()
+
+    r = client.post(f"/templates/{t.id}/clone", auth=AUTH, follow_redirects=False)
+    assert r.status_code == 303
+    assert session.query(EmailTemplate).count() == 2
+    clone = session.query(EmailTemplate).filter(EmailTemplate.id != t.id).one()
+    assert clone.name == "Intro (Copy)"
+    assert clone.subject == "s" and clone.body == "b"
+    assert clone.status == "active"
+    assert r.headers["location"] == f"/templates/{clone.id}/edit?msg=Template%20cloned."
+
+
+def test_archive_and_unarchive_template_default_hides_archived(client, session):
+    t = EmailTemplate(name="Widgets", subject="s", body="b", status="active")
+    session.add(t)
+    session.commit()
+
+    r = client.post(f"/templates/{t.id}/status", auth=AUTH, follow_redirects=False,
+                     data={"action": "archive", "status": "default"})
+    assert r.status_code == 303
+    assert r.headers["location"].startswith("/templates?status=default")
+    session.refresh(t)
+    assert t.status == "archived"
+
+    default_page = client.get("/templates", auth=AUTH)
+    assert "Widgets" not in default_page.text
+
+    archived_page = client.get("/templates?status=archived", auth=AUTH)
+    assert "Widgets" in archived_page.text
+
+    r2 = client.post(f"/templates/{t.id}/status", auth=AUTH, follow_redirects=False,
+                      data={"action": "unarchive", "status": "archived"})
+    assert r2.status_code == 303
+    session.refresh(t)
+    assert t.status == "active"
+
+
+def test_status_invalid_action_and_noop(client, session):
+    t = EmailTemplate(name="Gadgets", subject="s", body="b", status="active")
+    session.add(t)
+    session.commit()
+
+    r = client.post(f"/templates/{t.id}/status", auth=AUTH,
+                     data={"action": "bogus", "status": "default"})
+    assert r.status_code == 400
+
+    r2 = client.post(f"/templates/{t.id}/status", auth=AUTH, follow_redirects=False,
+                      data={"action": "unarchive", "status": "default"})
+    assert r2.status_code == 303  # no-op: already active, redirects without error
+    session.refresh(t)
+    assert t.status == "active"

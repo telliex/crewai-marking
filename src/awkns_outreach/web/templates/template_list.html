@@ -11,8 +11,14 @@
   example contact, send yourself a test, or copy it into a campaign's sequence step.
 </p>
 
-{% if not items %}
-<p class="text-slate-500 text-sm">No templates yet.</p>
+<div class="mb-4 flex gap-3 text-xs">
+  <a href="/templates" class="{% if status_filter == 'default' %}font-semibold text-slate-900{% else %}text-slate-500 hover:underline{% endif %}">Active</a>
+  <a href="/templates?status=archived" class="{% if status_filter == 'archived' %}font-semibold text-slate-900{% else %}text-slate-500 hover:underline{% endif %}">Archived</a>
+  <a href="/templates?status=all" class="{% if status_filter == 'all' %}font-semibold text-slate-900{% else %}text-slate-500 hover:underline{% endif %}">All</a>
+</div>
+
+{% if not rows %}
+<p class="text-slate-500 text-sm">No templates in this view.</p>
 {% else %}
 <div class="overflow-x-auto rounded border bg-white">
   <table class="w-full text-sm">
@@ -20,16 +26,36 @@
       <tr>
         <th class="px-3 py-2">Name</th>
         <th class="px-3 py-2">Subject</th>
+        <th class="px-3 py-2">Content</th>
         <th class="px-3 py-2">Actions</th>
       </tr>
     </thead>
     <tbody>
-      {% for t in items %}
+      {% for row in rows %}
+      {% set t = row.t %}
       <tr class="border-t">
         <td class="px-3 py-2"><a href="/templates/{{ t.id }}/edit" class="text-blue-700 hover:underline">{{ t.name }}</a></td>
         <td class="px-3 py-2 text-slate-500">{{ t.subject or "—" }}</td>
+        <td class="px-3 py-2 text-slate-500" title="{{ t.body }}">{{ row.content or "—" }}</td>
         <td class="px-3 py-2">
-          <a href="/templates/{{ t.id }}/edit" class="text-blue-700 hover:underline">Edit</a>
+          <div class="flex items-center gap-2">
+            {% if t.status != 'archived' %}
+            <a href="/templates/{{ t.id }}/edit" class="text-blue-700 hover:underline">Edit</a>
+            {% endif %}
+            <form method="post" action="/templates/{{ t.id }}/clone" class="inline">
+              <button type="submit" class="text-blue-700 hover:underline">Clone</button>
+            </form>
+            <form method="post" action="/templates/{{ t.id }}/status" class="inline">
+              <input type="hidden" name="status" value="{{ status_filter }}">
+              {% if t.status == 'archived' %}
+              <input type="hidden" name="action" value="unarchive">
+              <button type="submit" class="text-blue-700 hover:underline">Unarchive</button>
+              {% else %}
+              <input type="hidden" name="action" value="archive">
+              <button type="submit" class="text-red-700 hover:underline">Archive</button>
+              {% endif %}
+            </form>
+          </div>
         </td>
       </tr>
       {% endfor %}

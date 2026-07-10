@@ -27,6 +27,19 @@ router = APIRouter(dependencies=[Depends(require_admin)])
 # the test-send recipient matches what the preview pane showed.
 _PREVIEW_EMAIL = "jamie@acmestudios.example"
 
+_STATUS_FILTERS = ("active", "archived", "all")
+_STATUS_TRANSITIONS = {
+    "archive": {"active": "archived"},
+    "unarchive": {"archived": "active"},
+}
+
+
+def _truncate_body(body: str, length: int = 70) -> str:
+    collapsed = " ".join(body.split())
+    if len(collapsed) <= length:
+        return collapsed
+    return collapsed[:length].rstrip() + "…"
+
 
 def _get_template(db: Session, template_id: str) -> EmailTemplate:
     t = db.get(EmailTemplate, template_id)
@@ -96,9 +109,22 @@ def test_send_fragment(
 
 
 @router.get("/templates", response_class=HTMLResponse)
-def list_templates(request: Request, db: Session = Depends(get_db), msg: Optional[str] = None):
-    items = db.scalars(select(EmailTemplate).order_by(EmailTemplate.created_at.desc())).all()
-    return templates.TemplateResponse(request, "template_list.html", {"items": items, "msg": msg})
+def list_templates(
+    request: Request, db: Session = Depends(get_db),
+    status: Optional[str] = None, msg: Optional[str] = None,
+):
+    status_filter = status if status in _STATUS_FILTERS else "default"
+    q = select(EmailTemplate).order_by(EmailTemplate.created_at.desc())
+    if status_filter in ("active", "archived"):
+        q = q.where(EmailTemplate.status == status_filter)
+    elif status_filter == "default":
+        q = q.where(EmailTemplate.status == "active")
+    items = db.scalars(q).all()
+    rows = [{"t": t, "content": _truncate_body(t.body)} for t in items]
+    return templates.TemplateResponse(
+        request, "template_list.html",
+        {"rows": rows, "status_filter": status_filter, "msg": msg},
+    )
 
 
 @router.get("/templates/new", response_class=HTMLResponse)
@@ -184,3 +210,31 @@ def update_template(
     t.body = body.rstrip()
     db.commit()
     return RedirectResponse(f"/templates/{t.id}/edit?msg=Template saved.", status_code=303)
+
+
+@router.post("/templates/{template_id}/clone")
+def clone_template(template_id: str, db: Session = Depends(get_db)):
+    t = _get_template(db, template_id)
+    clone = EmailTemplate(name=f"{t.name} (Copy)", subject=t.subject, body=t.body, status="active")
+    db.add(clone)
+    db.commit()
+    return RedirectResponse(f"/templates/{clone.id}/edit?msg=Template cloned.", status_code=303)
+
+
+@router.post("/templates/{template_id}/status")
+def change_template_status(
+    template_id: str, action: str = Form(...), status: str = Form("default"),
+    db: Session = Depends(get_db),
+):
+    t = _get_template(db, template_id)
+    transitions = _STATUS_TRANSITIONS.get(action)
+    if transitions is None:
+        raise HTTPException(400, f"Unknown action: {action}")
+    new_status = transitions.get(t.status)
+    if new_status is None:
+        msg = f'Template "{t.name}" is already {t.status}.'
+    else:
+        t.status = new_status
+        db.commit()
+        msg = f'Template "{t.name}" {"archived" if new_status == "archived" else "unarchived"}.'
+    return RedirectResponse(f"/templates?status={status}&msg={msg}", status_code=303)
