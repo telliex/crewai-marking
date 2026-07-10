@@ -138,3 +138,12 @@ def test_test_send_uses_gmail_mailbox_recipient(client, session):
     assert r.status_code == 200
     assert gmail_route.called
     assert f"Test email sent to {mb.email}" in r.text
+
+
+def test_new_template_defaults_to_active_status(client, session):
+    r = client.post("/templates", auth=AUTH, follow_redirects=False, data={
+        "name": "Intro", "subject": "s", "body": "b",
+    })
+    assert r.status_code == 303
+    t = session.query(EmailTemplate).one()
+    assert t.status == "active"
