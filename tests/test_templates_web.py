@@ -85,61 +85,6 @@ def test_create_edit_delete_template(client, session):
     assert session.query(EmailTemplate).count() == 0
 
 
-def test_preview_renders_example_contact(client, session):
-    t = EmailTemplate(name="Intro", subject="s", body="s")
-    session.add(t)
-    session.commit()
-
-    r = client.post(f"/templates/{t.id}/edit", auth=AUTH, data={
-        "action": "preview", "name": "Intro", "subject": "hi {company}",
-        "body": "Hi {first_name}, {angle}",
-    })
-    assert r.status_code == 200
-    assert "hi Acme Studios" in r.text  # {company} filled from the example contact
-    assert "Hi Jamie," in r.text  # {first_name} filled
-
-
-@respx.mock
-def test_test_send_posts_to_resend_when_no_mailbox_selected(client, session):
-    route = respx.post("https://api.resend.com/emails").mock(
-        return_value=httpx.Response(200, json={"id": "resend-1"})
-    )
-    t = EmailTemplate(name="Intro", subject="s", body="b")
-    session.add(t)
-    session.commit()
-
-    r = client.post(f"/templates/{t.id}/edit", auth=AUTH, data={
-        "action": "test_send", "name": "Intro", "subject": "s", "body": "b", "mailbox_id": "",
-    })
-    assert r.status_code == 200
-    assert route.called
-    sent_body = route.calls.last.request.content.decode()
-    assert settings.outreach_from in sent_body
-    assert f"Test email sent to {settings.outreach_from}" in r.text
-
-
-@respx.mock
-def test_test_send_uses_gmail_mailbox_recipient(client, session):
-    mb = Mailbox(
-        email="steven@gmail.com", access_token="at", refresh_token="rt",
-        token_expiry=datetime.now(timezone.utc) + timedelta(hours=1), status="connected",
-    )
-    session.add(mb)
-    t = EmailTemplate(name="Intro", subject="s", body="b")
-    session.add(t)
-    session.commit()
-
-    gmail_route = respx.post("https://gmail.googleapis.com/gmail/v1/users/me/messages/send").mock(
-        return_value=httpx.Response(200, json={"id": "g1", "threadId": "t1"})
-    )
-    r = client.post(f"/templates/{t.id}/edit", auth=AUTH, data={
-        "action": "test_send", "name": "Intro", "subject": "s", "body": "b", "mailbox_id": mb.id,
-    })
-    assert r.status_code == 200
-    assert gmail_route.called
-    assert f"Test email sent to {mb.email}" in r.text
-
-
 def test_new_template_defaults_to_active_status(client, session):
     r = client.post("/templates", auth=AUTH, follow_redirects=False, data={
         "name": "Intro", "subject": "s", "body": "b",

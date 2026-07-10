@@ -41,6 +41,35 @@ def _connected_mailboxes(db: Session) -> list[Mailbox]:
     ).all()
 
 
+def _render_preview(subject: str, body: str):
+    return render_template_preview(subject, body, _PREVIEW_EMAIL)
+
+
+def _send_test_email(db: Session, subject: str, body: str, mailbox_id: str) -> str:
+    """Build a throwaway Campaign/Lead (never persisted) and send through
+    send_outreach_email's normal Gmail/Resend dispatch — same path a real
+    sequence step would take. Returns the confirmation or failure message
+    shown in the test-send status line."""
+    mailbox = db.get(Mailbox, mailbox_id) if mailbox_id else None
+    recipient = mailbox.email if mailbox else settings.outreach_from
+    test_campaign = Campaign(
+        id="preview", name="Template test send", target_titles=[], seed_companies=[],
+        sequence=[{"key": "test", "delay_days": 0, "subject": subject, "body": body}],
+        sender_identity={},
+    )
+    test_campaign.mailbox = mailbox
+    test_lead = Lead(
+        campaign_id="preview", email=recipient, company="Acme Studios",
+        contact_name="Jamie Rivera", contact_title="Creative Director", country="US",
+        angle="Your recent campaign work would translate beautifully into short-form video.",
+        status="active", step=0,
+    )
+    res = send_outreach_email(test_lead, test_campaign, recipient, 0, dry_run=False)
+    if res.ok:
+        return f"Test email sent! Check your inbox at {recipient}."
+    return f"Test send failed: {res.error}"
+
+
 @router.get("/templates", response_class=HTMLResponse)
 def list_templates(request: Request, db: Session = Depends(get_db), msg: Optional[str] = None):
     items = db.scalars(select(EmailTemplate).order_by(EmailTemplate.created_at.desc())).all()
@@ -80,70 +109,34 @@ def edit_template_form(
     )
 
 
+def _archived_edit_guard(t: EmailTemplate):
+    return None
+
+
 @router.post("/templates/{template_id}/edit", response_class=HTMLResponse)
 def update_template(
     template_id: str,
-    request: Request,
     action: str = Form("save"),
     name: str = Form(""),
     subject: str = Form(""),
     body: str = Form(""),
-    mailbox_id: str = Form(""),
     db: Session = Depends(get_db),
 ):
     t = _get_template(db, template_id)
+    blocked = _archived_edit_guard(t)
+    if blocked:
+        return blocked
 
     if action == "delete":
         db.delete(t)
         db.commit()
         return RedirectResponse("/templates?msg=Template deleted.", status_code=303)
 
-    if action == "save":
-        t.name = name.strip()
-        t.subject = subject.strip()
-        t.body = body.rstrip()
-        db.commit()
-        return RedirectResponse(f"/templates/{t.id}/edit?msg=Template saved.", status_code=303)
-
-    if action not in ("preview", "test_send"):
+    if action != "save":
         raise HTTPException(400, f"Unknown action: {action}")
 
-    # preview/test_send render the SUBMITTED (possibly unsaved) fields, not
-    # committed to the DB — mutate the in-memory object only, for display.
-    t.name = name.strip() or t.name
+    t.name = name.strip()
     t.subject = subject.strip()
     t.body = body.rstrip()
-    mailboxes = _connected_mailboxes(db)
-
-    if action == "preview":
-        rendered = render_template_preview(t.subject, t.body, _PREVIEW_EMAIL)
-        return templates.TemplateResponse(
-            request, "template_edit.html",
-            {"t": t, "preview": rendered, "placeholders": SEQUENCE_PLACEHOLDERS,
-             "mailboxes": mailboxes, "msg": None},
-        )
-
-    # action == "test_send": reuse send_outreach_email's own dispatch (Gmail
-    # vs Resend) so a test send exercises exactly the same code path a real
-    # sequence step would, via a throwaway campaign/lead pair (never persisted).
-    mailbox = db.get(Mailbox, mailbox_id) if mailbox_id else None
-    recipient = mailbox.email if mailbox else settings.outreach_from
-    test_campaign = Campaign(
-        id="preview", name="Template test send", target_titles=[], seed_companies=[],
-        sequence=[{"key": "test", "delay_days": 0, "subject": t.subject, "body": t.body}],
-        sender_identity={},
-    )
-    test_campaign.mailbox = mailbox
-    test_lead = Lead(
-        campaign_id="preview", email=recipient, company="Acme Studios",
-        contact_name="Jamie Rivera", contact_title="Creative Director", country="US",
-        angle="Your recent campaign work would translate beautifully into short-form video.",
-        status="active", step=0,
-    )
-    res = send_outreach_email(test_lead, test_campaign, recipient, 0, dry_run=False)
-    msg = f"Test email sent to {recipient}." if res.ok else f"Test send failed: {res.error}"
-    return templates.TemplateResponse(
-        request, "template_edit.html",
-        {"t": t, "preview": None, "placeholders": SEQUENCE_PLACEHOLDERS,
-         "mailboxes": mailboxes, "msg": msg},
-    )
+    db.commit()
+    return RedirectResponse(f"/templates/{t.id}/edit?msg=Template saved.", status_code=303)
