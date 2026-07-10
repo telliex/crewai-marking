@@ -9,13 +9,15 @@ from __future__ import annotations
 
 from fastapi import FastAPI
 
-from awkns_outreach.web.routes import admin, public
+from awkns_outreach.web.routes import admin, mailboxes, public, templates_lib
 
 
 def create_app() -> FastAPI:
     app = FastAPI(title="Awkns Outreach", docs_url="/docs")
     app.include_router(public.router)
     app.include_router(admin.router)
+    app.include_router(mailboxes.router)
+    app.include_router(templates_lib.router)
 
     @app.get("/healthz", include_in_schema=False)
     def healthz() -> dict[str, str]:

@@ -76,6 +76,11 @@ class Campaign(Base):
     warmup_start: Mapped[Optional[datetime]] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
+    # NULL = implicit Resend (today's behaviour, unchanged). Set to send this
+    # campaign's sequence through a connected Gmail mailbox instead.
+    mailbox_id: Mapped[Optional[str]] = mapped_column(
+        ForeignKey("mailbox.id", ondelete="SET NULL"), nullable=True
+    )
 
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
@@ -87,6 +92,7 @@ class Campaign(Base):
     leads: Mapped[list["Lead"]] = relationship(
         back_populates="campaign", cascade="all, delete-orphan"
     )
+    mailbox: Mapped[Optional["Mailbox"]] = relationship(back_populates="campaigns")
 
 
 class Lead(Base):
@@ -121,6 +127,10 @@ class Lead(Base):
     # active | sending | completed | replied | bounced | suppressed | paused | failed
     status: Mapped[str] = mapped_column(String, default="active", nullable=False)
     thread_ref: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    # RFC-822 Message-ID of the last email WE generated for this lead (set by
+    # the Gmail mailer via email.utils.make_msgid), so a follow-up step can set
+    # In-Reply-To/References without an extra Gmail API round-trip.
+    last_message_id: Mapped[Optional[str]] = mapped_column(String, nullable=True)
 
     last_sent_at: Mapped[Optional[datetime]] = mapped_column(
         DateTime(timezone=True), nullable=True
@@ -182,4 +192,67 @@ class Suppression(Base):
     reason: Mapped[str] = mapped_column(String, nullable=False)  # unsubscribe|bounce|complaint|manual
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
+    )
+
+
+class Mailbox(Base):
+    """A connected Gmail account used as a campaign's send-as identity.
+
+    Tokens are stored in plaintext columns: this is a single-operator
+    self-hosted tool whose DB already holds all lead PII and whose .env holds
+    the Resend key in plaintext — Fernet-encrypting just these two columns is
+    a noted future hardening, not a blocker. Never log access_token/refresh_token.
+    """
+
+    __tablename__ = "mailbox"
+
+    id: Mapped[str] = mapped_column(String, primary_key=True, default=_uuid)
+    provider: Mapped[str] = mapped_column(String, default="gmail", nullable=False)
+    email: Mapped[str] = mapped_column(String, nullable=False, unique=True)
+    display_name: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+
+    access_token: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    refresh_token: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    token_expiry: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    scopes: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+
+    # connected | needs_reconnect | disconnected
+    status: Mapped[str] = mapped_column(String, default="connected", nullable=False)
+    last_error: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    last_poll_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    connected_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+    campaigns: Mapped[list["Campaign"]] = relationship(back_populates="mailbox")
+
+
+class EmailTemplate(Base):
+    """A standalone, reusable email (name/subject/body) — Apollo's "New
+    Template" concept. Not tied to any campaign; sequence steps can copy one
+    in via the editor's "insert template" dropdown."""
+
+    __tablename__ = "email_template"
+
+    id: Mapped[str] = mapped_column(String, primary_key=True, default=_uuid)
+    name: Mapped[str] = mapped_column(String, nullable=False)
+    subject: Mapped[str] = mapped_column(String, nullable=False)
+    body: Mapped[str] = mapped_column(String, nullable=False)
+
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
     )

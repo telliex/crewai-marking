@@ -1,0 +1,61 @@
+{% extends "base.html" %}
+{% block title %}{% if t %}Edit {{ t.name }}{% else %}New template{% endif %} — Awkns Outreach{% endblock %}
+{% block content %}
+<a href="/templates" class="text-xs text-slate-500 hover:underline">&larr; Templates</a>
+<h1 class="text-lg font-semibold mb-4">{% if t %}Edit template{% else %}New template{% endif %}</h1>
+
+<div class="mb-4 rounded border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600">
+  Placeholders (filled per lead):
+  {% for p in placeholders %}<code class="mx-0.5 rounded bg-white border px-1">{{ '{' ~ p ~ '}' }}</code>{% endfor %}
+  · The identity footer + unsubscribe line are added automatically.
+</div>
+
+<form method="post" action="{% if t %}/templates/{{ t.id }}/edit{% else %}/templates{% endif %}" class="max-w-2xl space-y-4">
+  <div>
+    <label class="block text-sm font-medium mb-1">Name</label>
+    <input name="name" required value="{{ t.name if t else '' }}" class="w-full border rounded px-2 py-1.5">
+  </div>
+  <div>
+    <label class="block text-sm font-medium mb-1">Subject</label>
+    <input name="subject" value="{{ t.subject if t else '' }}" class="w-full border rounded px-2 py-1.5"
+           placeholder="quick idea for {company}">
+  </div>
+  <div>
+    <label class="block text-sm font-medium mb-1">Body</label>
+    <textarea name="body" rows="8" class="w-full border rounded px-2 py-1.5 font-mono text-sm"
+              placeholder="Hi {first_name},&#10;&#10;{angle}&#10;&#10;{sender_name}">{{ t.body if t else '' }}</textarea>
+  </div>
+
+  {% if t %}
+  <div class="flex flex-wrap items-center gap-2">
+    <button type="submit" name="action" value="save" class="rounded bg-slate-900 text-white text-sm px-4 py-2">Save</button>
+    <button type="submit" name="action" value="preview" class="rounded border bg-white text-sm px-4 py-2">Preview</button>
+    <select name="mailbox_id" class="border rounded px-2 py-1.5 text-sm">
+      <option value="">Resend (default)</option>
+      {% for mb in mailboxes %}
+      <option value="{{ mb.id }}">{{ mb.email }}</option>
+      {% endfor %}
+    </select>
+    <button type="submit" name="action" value="test_send" class="rounded border bg-white text-sm px-4 py-2">Send test email to me</button>
+    <button type="submit" name="action" value="delete"
+            onclick="if(!confirm('Delete this template? This can\'t be undone.')){event.preventDefault();}"
+            class="rounded border border-red-300 text-red-700 text-sm px-4 py-2 ml-auto">Delete</button>
+  </div>
+  {% else %}
+  <div class="flex gap-2">
+    <button class="rounded bg-slate-900 text-white text-sm px-4 py-2">Create</button>
+    <a href="/templates" class="rounded border text-sm px-4 py-2">Cancel</a>
+  </div>
+  {% endif %}
+</form>
+
+{% if preview %}
+<h2 class="text-sm font-semibold mt-8 mb-2">Preview — example contact (Jamie Rivera, Acme Studios)</h2>
+<div class="rounded border bg-white p-4 max-w-2xl">
+  <div class="text-xs text-slate-500 mb-2">Subject</div>
+  <div class="text-sm font-medium mb-4">{{ preview.subject }}</div>
+  <div class="text-xs text-slate-500 mb-2">Body (rendered HTML)</div>
+  <div class="border rounded p-3">{{ preview.html|safe }}</div>
+</div>
+{% endif %}
+{% endblock %}

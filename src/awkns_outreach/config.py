@@ -55,6 +55,11 @@ class Settings(BaseSettings):
     # --- Writer ---
     crew_model: str = Field(default="anthropic/claude-sonnet-4-5", alias="CREW_MODEL")
 
+    # --- Gmail mailbox (OAuth) --- Google Cloud Console OAuth Client ID (Web
+    # application); redirect URI is derived from app_base_url, no separate env var.
+    google_client_id: str = Field(default="", alias="GOOGLE_CLIENT_ID")
+    google_client_secret: str = Field(default="", alias="GOOGLE_CLIENT_SECRET")
+
     @property
     def reply_to(self) -> str:
         return self.outreach_reply_to or self.outreach_from

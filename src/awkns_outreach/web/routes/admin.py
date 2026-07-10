@@ -14,7 +14,7 @@ from sqlalchemy.orm import Session
 from awkns_outreach.apollo.client import domain_from_website
 from awkns_outreach.apollo.enrich import enrich_campaign
 from awkns_outreach.apollo.seed import SEED_FIELDS, parse_seed_companies
-from awkns_outreach.db.models import Campaign, Lead, Suppression
+from awkns_outreach.db.models import Campaign, EmailTemplate, Lead, Mailbox, Suppression
 from awkns_outreach.sequencer import process_campaign
 from awkns_outreach.web.deps import get_db, require_admin, templates
 from awkns_outreach.web.stats import campaign_stats
@@ -177,7 +177,12 @@ def edit_campaign_form(campaign_id: str, request: Request, db: Session = Depends
     blocked = _archived_edit_guard(c)
     if blocked:
         return blocked
-    return templates.TemplateResponse(request, "campaign_edit.html", {"c": c})
+    mailboxes = db.scalars(
+        select(Mailbox).where(Mailbox.status == "connected").order_by(Mailbox.email)
+    ).all()
+    return templates.TemplateResponse(
+        request, "campaign_edit.html", {"c": c, "mailboxes": mailboxes}
+    )
 
 
 @router.post("/campaigns/{campaign_id}/edit")
@@ -187,6 +192,7 @@ def save_campaign_edit(
     description: str = Form(""),
     titles: str = Form(""),
     angle_prompt: str = Form(""),
+    mailbox_id: str = Form(""),
     db: Session = Depends(get_db),
 ):
     c = _get_campaign(db, campaign_id)
@@ -197,6 +203,8 @@ def save_campaign_edit(
     c.description = description.strip() or None
     c.target_titles = _split_lines(titles)
     c.angle_prompt = angle_prompt.strip() or None
+    # Empty option = "Default (Resend)" -> NULL mailbox_id, today's behaviour.
+    c.mailbox_id = mailbox_id or None
     db.commit()
     return RedirectResponse(f"/campaigns/{c.id}?msg=Campaign updated.", status_code=303)
 
@@ -253,9 +261,18 @@ def run_sequencer(
 @router.get("/campaigns/{campaign_id}/sequence", response_class=HTMLResponse)
 def edit_sequence_form(campaign_id: str, request: Request, db: Session = Depends(get_db)):
     c = _get_campaign(db, campaign_id)
+    # Templates as a JSON blob in the page — the "insert template" dropdown
+    # copies subject/body into a step client-side, no extra round-trip.
+    template_options = [
+        {"id": t.id, "name": t.name, "subject": t.subject, "body": t.body}
+        for t in db.scalars(select(EmailTemplate).order_by(EmailTemplate.name)).all()
+    ]
     return templates.TemplateResponse(
         request, "sequence_edit.html",
-        {"c": c, "steps": c.sequence or [], "placeholders": SEQUENCE_PLACEHOLDERS},
+        {
+            "c": c, "steps": c.sequence or [], "placeholders": SEQUENCE_PLACEHOLDERS,
+            "template_options": template_options,
+        },
     )
 
 

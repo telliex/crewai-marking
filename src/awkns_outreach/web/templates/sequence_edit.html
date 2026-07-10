@@ -27,6 +27,16 @@
               class="mt-1 w-full border rounded px-2 py-1.5 text-sm font-mono"
               placeholder="Hi {first_name},&#10;&#10;{angle}&#10;&#10;{sender_name}">{{ step.body or '' }}</textarea>
   </label>
+  {% if template_options %}
+  <label class="text-xs text-slate-500 block mt-2">Insert template <span class="text-slate-400 font-normal">(overwrites subject/body above)</span>
+    <select class="template-picker mt-1 border rounded px-2 py-1 text-sm" onchange="insertTemplate(this)">
+      <option value="">— choose a template —</option>
+      {% for tpl in template_options %}
+      <option value="{{ loop.index0 }}">{{ tpl.name }}</option>
+      {% endfor %}
+    </select>
+  </label>
+  {% endif %}
 </div>
 {% endmacro %}
 
@@ -40,6 +50,7 @@
   Placeholders (filled per lead):
   {% for p in placeholders %}<code class="mx-0.5 rounded bg-white border px-1">{{ '{' ~ p ~ '}' }}</code>{% endfor %}
   · The identity footer + unsubscribe line are added automatically.
+  · Manage reusable copy in the <a href="/templates" class="underline">template library</a>.
 </div>
 
 <form method="post" action="/campaigns/{{ c.id }}/sequence">
@@ -57,6 +68,19 @@
 <template id="step-tpl">{{ step_block({}) }}</template>
 
 <script>
+  // Templates as a JSON blob in the page — the picker copies subject/body
+  // into that step's fields client-side, no extra round-trip.
+  const TEMPLATES = {{ template_options|tojson }};
+
+  function insertTemplate(select) {
+    const tpl = TEMPLATES[parseInt(select.value, 10)];
+    if (!tpl) return;
+    const block = select.closest('.step-block');
+    block.querySelector('[name=subject]').value = tpl.subject || '';
+    block.querySelector('[name=body]').value = tpl.body || '';
+    select.value = '';
+  }
+
   function renumber() {
     document.querySelectorAll('#steps .step-block .step-num')
       .forEach((el, i) => el.textContent = i + 1);

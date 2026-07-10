@@ -24,6 +24,19 @@
     <textarea name="angle_prompt" rows="2" class="w-full border rounded px-2 py-1.5"
       placeholder="Leave blank to use the default research prompt.">{{ c.angle_prompt or "" }}</textarea>
   </div>
+  <div>
+    <label class="block text-sm font-medium mb-1">Send via</label>
+    <select name="mailbox_id" class="w-full border rounded px-2 py-1.5">
+      <option value="" {% if not c.mailbox_id %}selected{% endif %}>Default (Resend)</option>
+      {% for mb in mailboxes %}
+      <option value="{{ mb.id }}" {% if c.mailbox_id == mb.id %}selected{% endif %}>{{ mb.email }}</option>
+      {% endfor %}
+    </select>
+    <p class="text-xs text-slate-400 mt-1">
+      Connect a Gmail mailbox on the <a href="/mailboxes" class="underline">Mailboxes</a> page to
+      send this campaign's sequence as that inbox instead of the default Resend sender.
+    </p>
+  </div>
   <div class="flex gap-2">
     <button class="rounded bg-slate-900 text-white text-sm px-4 py-2">Save</button>
     <a href="/campaigns/{{ c.id }}" class="rounded border text-sm px-4 py-2">Cancel</a>

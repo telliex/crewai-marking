@@ -8,6 +8,7 @@
     uv run outreach run <campaign_id> --send                 # send for real
     uv run outreach run-all --send                           # every active campaign
     uv run outreach cron --interval 15 --send                # scheduled small batches
+    uv run outreach poll-replies                             # check connected mailboxes once
 """
 from __future__ import annotations
 
@@ -116,11 +117,33 @@ def cron(
     interval: int = typer.Option(15, help="Minutes between ticks."),
     send: bool = typer.Option(False),
     max_per_tick: int = typer.Option(5, "--max"),
+    poll_interval: int = typer.Option(5, "--poll-interval", help="Minutes between reply-detection polls."),
 ) -> None:
     """Run the scheduler (blocks). Small batches per tick; cadence gives spacing."""
     from awkns_outreach import scheduler
 
-    scheduler.start(interval_minutes=interval, send=send, max_per_tick=max_per_tick)
+    scheduler.start(
+        interval_minutes=interval, send=send, max_per_tick=max_per_tick,
+        poll_interval_minutes=poll_interval,
+    )
+
+
+@app.command("poll-replies")
+def poll_replies() -> None:
+    """Poll every connected Gmail mailbox once; mark matching leads replied."""
+    from awkns_outreach.gmail.replies import poll_all_mailboxes
+
+    with session_scope() as s:
+        summaries = poll_all_mailboxes(s)
+    if not summaries:
+        typer.echo("No mailboxes to poll.")
+        return
+    for summary in summaries:
+        status = (
+            f"error: {summary.error}" if summary.error
+            else f"matched={summary.matched} considered={summary.considered}"
+        )
+        typer.echo(f"[{summary.mailbox_email}] {status}")
 
 
 def main() -> None:

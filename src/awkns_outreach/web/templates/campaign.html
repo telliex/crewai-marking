@@ -6,7 +6,8 @@
   <h1 class="text-lg font-semibold">{{ c.name }}</h1>
   <p class="text-xs text-slate-500">
     Titles: {{ c.target_titles|join(", ") or "—" }} ·
-    Companies: {{ c.seed_companies|length }}
+    Companies: {{ c.seed_companies|length }} ·
+    Sends via: {{ c.mailbox.email if c.mailbox else "Resend (default)" }}
     <a href="/campaigns/{{ c.id }}/companies" class="underline hover:text-slate-700">Edit companies</a>
   </p>
 </div>
@@ -33,6 +34,12 @@
 {% if not stats.steps %}
 <div class="mb-6 rounded border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
   This campaign has no email sequence yet — <a href="/campaigns/{{ c.id }}/sequence" class="underline font-medium">set it up</a> before running, or nothing will send.
+</div>
+{% endif %}
+{% if c.mailbox and c.mailbox.status == "needs_reconnect" %}
+<div class="mb-6 rounded border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800">
+  ⚠ This campaign's mailbox ({{ c.mailbox.email }}) needs reconnecting — sends will fail fast
+  until you <a href="/mailboxes" class="underline font-medium">reconnect it</a>.
 </div>
 {% endif %}
 
