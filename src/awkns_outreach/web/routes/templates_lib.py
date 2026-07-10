@@ -70,6 +70,15 @@ def _send_test_email(db: Session, subject: str, body: str, mailbox_id: str) -> s
     return f"Test send failed: {res.error}"
 
 
+@router.post("/templates/preview-fragment", response_class=HTMLResponse)
+def preview_fragment(
+    request: Request, subject: str = Form(""), body: str = Form(""),
+):
+    return templates.TemplateResponse(
+        request, "_template_preview_fragment.html", {"preview": _render_preview(subject, body)},
+    )
+
+
 @router.get("/templates", response_class=HTMLResponse)
 def list_templates(request: Request, db: Session = Depends(get_db), msg: Optional[str] = None):
     items = db.scalars(select(EmailTemplate).order_by(EmailTemplate.created_at.desc())).all()

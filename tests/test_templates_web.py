@@ -92,3 +92,13 @@ def test_new_template_defaults_to_active_status(client, session):
     assert r.status_code == 303
     t = session.query(EmailTemplate).one()
     assert t.status == "active"
+
+
+def test_preview_fragment_renders_example_contact_without_saved_template(client, session):
+    r = client.post("/templates/preview-fragment", auth=AUTH, data={
+        "subject": "hi {company}", "body": "Hi {first_name}, {angle}",
+    })
+    assert r.status_code == 200
+    assert "hi Acme Studios" in r.text
+    assert "Hi Jamie," in r.text
+    assert session.query(EmailTemplate).count() == 0  # no template was created/required
