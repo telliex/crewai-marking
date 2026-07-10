@@ -2,17 +2,31 @@
 {% block content %}
 <div class="flex items-center justify-between mb-4">
   <h1 class="text-lg font-semibold">Campaigns</h1>
-  <a href="/campaigns/new" class="rounded bg-slate-900 text-white text-sm px-3 py-1.5">+ New campaign</a>
+  <div class="flex items-center gap-3">
+    <form method="get" action="/">
+      <select name="status" onchange="this.form.submit()" class="border rounded px-2 py-1.5 text-sm">
+        <option value="default" {% if status_filter == "default" %}selected{% endif %}>Active &amp; paused</option>
+        <option value="active" {% if status_filter == "active" %}selected{% endif %}>Active</option>
+        <option value="paused" {% if status_filter == "paused" %}selected{% endif %}>Paused</option>
+        <option value="archived" {% if status_filter == "archived" %}selected{% endif %}>Archived</option>
+        <option value="all" {% if status_filter == "all" %}selected{% endif %}>All</option>
+      </select>
+    </form>
+    <a href="/campaigns/new" class="rounded bg-slate-900 text-white text-sm px-3 py-1.5">+ New campaign</a>
+  </div>
 </div>
 
-{% if not rows %}
+{% if not any_campaigns %}
 <p class="text-slate-500 text-sm">No campaigns yet. Create one to start.</p>
+{% elif not rows %}
+<p class="text-slate-500 text-sm">No campaigns match this filter.</p>
 {% else %}
 <div class="overflow-x-auto rounded border bg-white">
   <table class="w-full text-sm">
     <thead class="bg-slate-100 text-slate-500 text-left">
       <tr>
         <th class="px-3 py-2">Campaign</th>
+        <th class="px-3 py-2">Status</th>
         <th class="px-3 py-2">Leads</th>
         <th class="px-3 py-2">Active</th>
         <th class="px-3 py-2">Completed</th>
@@ -20,12 +34,29 @@
         <th class="px-3 py-2">Sent 24h</th>
         <th class="px-3 py-2">Cap / left</th>
         <th class="px-3 py-2">Steps</th>
+        <th class="px-3 py-2">Actions</th>
       </tr>
     </thead>
     <tbody>
       {% for r in rows %}
-      <tr class="border-t hover:bg-slate-50">
-        <td class="px-3 py-2"><a class="text-blue-700 hover:underline" href="/campaigns/{{ r.c.id }}">{{ r.c.name }}</a></td>
+      {% set c = r.c %}
+      {% set archived = c.status == "archived" %}
+      <tr class="border-t hover:bg-slate-50 {% if archived %}text-slate-400{% endif %}">
+        <td class="px-3 py-2">
+          <a class="{% if archived %}text-slate-400{% else %}text-blue-700{% endif %} hover:underline" href="/campaigns/{{ c.id }}">{{ c.name }}</a>
+          {% if c.description %}
+          <div class="text-xs text-slate-400 truncate max-w-xs" title="{{ c.description }}">{{ c.description }}</div>
+          {% endif %}
+        </td>
+        <td class="px-3 py-2">
+          {% if c.status == "active" %}
+          <span class="rounded px-1.5 py-0.5 text-xs bg-green-100 text-green-800">active</span>
+          {% elif c.status == "paused" %}
+          <span class="rounded px-1.5 py-0.5 text-xs bg-amber-100 text-amber-800">paused</span>
+          {% else %}
+          <span class="rounded px-1.5 py-0.5 text-xs bg-slate-200 text-slate-600">archived</span>
+          {% endif %}
+        </td>
         <td class="px-3 py-2">{{ r.stats.total }}</td>
         <td class="px-3 py-2">{{ r.stats.by_status.active }}</td>
         <td class="px-3 py-2">{{ r.stats.by_status.completed }}</td>
@@ -33,10 +64,119 @@
         <td class="px-3 py-2">{{ r.stats.sent_last_24h }}</td>
         <td class="px-3 py-2">{{ r.stats.cap }} / {{ r.stats.daily_remaining }}</td>
         <td class="px-3 py-2">{{ r.stats.steps }}</td>
+        <td class="px-3 py-2">
+          <div class="flex items-center gap-2 whitespace-nowrap">
+            {% if archived %}
+            <span class="text-slate-300 cursor-not-allowed" title="Archived campaigns can’t be edited — unarchive first.">Edit</span>
+            <form method="post" action="/campaigns/{{ c.id }}/status">
+              <input type="hidden" name="action" value="unarchive">
+              <input type="hidden" name="status" value="{{ status_filter }}">
+              <input type="hidden" name="page" value="{{ page }}">
+              <button class="text-blue-700 hover:underline">Unarchive</button>
+            </form>
+            {% else %}
+            <a href="/campaigns/{{ c.id }}/edit" class="text-blue-700 hover:underline">Edit</a>
+            {% if c.status == "active" %}
+            <form method="post" action="/campaigns/{{ c.id }}/status">
+              <input type="hidden" name="action" value="pause">
+              <input type="hidden" name="status" value="{{ status_filter }}">
+              <input type="hidden" name="page" value="{{ page }}">
+              <button class="text-blue-700 hover:underline">Pause</button>
+            </form>
+            {% else %}
+            <form method="post" action="/campaigns/{{ c.id }}/status">
+              <input type="hidden" name="action" value="resume">
+              <input type="hidden" name="status" value="{{ status_filter }}">
+              <input type="hidden" name="page" value="{{ page }}">
+              <button class="text-blue-700 hover:underline">Resume</button>
+            </form>
+            {% endif %}
+            <button type="button"
+              class="text-red-700 hover:underline"
+              data-archive-open
+              data-name="{{ c.name }}"
+              data-leads="{{ r.stats.total }}"
+              data-active="{{ r.stats.by_status.active }}"
+              data-sent="{{ r.stats.sent_total }}"
+              data-url="/campaigns/{{ c.id }}/status">Archive</button>
+            {% endif %}
+          </div>
+        </td>
       </tr>
       {% endfor %}
     </tbody>
   </table>
 </div>
+
+<div class="flex items-center justify-between mt-4 text-sm text-slate-500">
+  <span>Showing {{ (page - 1) * page_size + 1 }}–{{ (page - 1) * page_size + rows|length }} of {{ total }} campaigns</span>
+  {% if pages > 1 %}
+  <div class="flex items-center gap-2">
+    {% if page > 1 %}
+    <a href="/?status={{ status_filter }}&page={{ page - 1 }}" class="hover:underline">Prev</a>
+    {% endif %}
+    {% for p in range(1, pages + 1) %}
+    <a href="/?status={{ status_filter }}&page={{ p }}"
+       class="{% if p == page %}font-semibold text-slate-900{% else %}hover:underline{% endif %}">{{ p }}</a>
+    {% endfor %}
+    {% if page < pages %}
+    <a href="/?status={{ status_filter }}&page={{ page + 1 }}" class="hover:underline">Next</a>
+    {% endif %}
+  </div>
+  {% endif %}
+</div>
 {% endif %}
+
+<!-- Archive confirmation: ONE shared dialog, filled from the clicked button's
+     data-* attributes by a small vanilla-JS block. No HTMX needed. -->
+<dialog id="archive-dialog" class="rounded border p-0 max-w-sm w-full">
+  <form method="post" id="archive-form" class="p-4 space-y-3">
+    <h2 class="text-sm font-semibold">Archive “<span id="archive-name"></span>”?</h2>
+    <div class="text-xs text-slate-600 space-y-1">
+      <div>Leads (total): <b id="archive-leads"></b></div>
+      <div>Active (in sequence): <b id="archive-active"></b></div>
+      <div>Sent (lifetime): <b id="archive-sent"></b></div>
+    </div>
+    <p class="text-xs text-slate-500">Leads and history are kept — archiving only stops sending.</p>
+    <p id="archive-warning" class="hidden text-xs text-amber-700 font-medium"></p>
+    <input type="hidden" name="action" value="archive">
+    <input type="hidden" name="status" value="{{ status_filter }}">
+    <input type="hidden" name="page" value="{{ page }}">
+    <div class="flex justify-end gap-2 pt-2">
+      <button type="button" id="archive-cancel" class="rounded border text-xs px-3 py-1.5">Cancel</button>
+      <button type="submit" class="rounded bg-red-700 text-white text-xs px-3 py-1.5">Archive</button>
+    </div>
+  </form>
+</dialog>
+
+<script>
+  (function () {
+    var dialog = document.getElementById("archive-dialog");
+    var form = document.getElementById("archive-form");
+    var warning = document.getElementById("archive-warning");
+
+    document.querySelectorAll("[data-archive-open]").forEach(function (btn) {
+      btn.addEventListener("click", function () {
+        document.getElementById("archive-name").textContent = btn.dataset.name;
+        document.getElementById("archive-leads").textContent = btn.dataset.leads;
+        document.getElementById("archive-active").textContent = btn.dataset.active;
+        document.getElementById("archive-sent").textContent = btn.dataset.sent;
+        form.action = btn.dataset.url;
+
+        var active = parseInt(btn.dataset.active, 10) || 0;
+        if (active > 0) {
+          warning.textContent = active + " leads are mid-sequence — archiving stops their sends";
+          warning.classList.remove("hidden");
+        } else {
+          warning.classList.add("hidden");
+        }
+        dialog.showModal();
+      });
+    });
+
+    document.getElementById("archive-cancel").addEventListener("click", function () {
+      dialog.close();
+    });
+  })();
+</script>
 {% endblock %}

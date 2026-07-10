@@ -44,7 +44,8 @@ class Campaign(Base):
 
     id: Mapped[str] = mapped_column(String, primary_key=True, default=_uuid)
     name: Mapped[str] = mapped_column(String, nullable=False)
-    status: Mapped[str] = mapped_column(String, default="active")  # active | paused
+    description: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    status: Mapped[str] = mapped_column(String, default="active")  # active | paused | archived
     tier: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
 
     # Apollo people-search inputs.

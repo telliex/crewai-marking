@@ -70,6 +70,11 @@ def process_campaign(
     summary = RunSummary(dry_run=dry_run)
 
     if not dry_run:
+        # A paused/archived campaign must not send for real even if the run
+        # endpoint (or cron) fires. Dry-run previews stay allowed for any status.
+        if campaign.status != "active":
+            summary.blocked = f"campaign is {campaign.status}"
+            return summary
         ok, reason = can_send_legally(resolve_identity(campaign.sender_identity))
         if not ok:
             summary.blocked = reason

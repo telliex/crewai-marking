@@ -31,11 +31,18 @@ def campaign_stats(session: Session, campaign: Campaign, now: Optional[datetime]
         .join(Lead, Event.lead_id == Lead.id)
         .where(Lead.campaign_id == campaign.id, Event.type == "sent", Event.created_at >= since)
     ) or 0
+    # Lifetime count (no time filter) — used by the archive confirmation dialog.
+    sent_total = session.scalar(
+        select(func.count()).select_from(Event)
+        .join(Lead, Event.lead_id == Lead.id)
+        .where(Lead.campaign_id == campaign.id, Event.type == "sent")
+    ) or 0
     cap = min(SEND.hard_daily_cap, warmup_cap(campaign.warmup_start, now))
     return {
         "total": sum(by_status.values()),
         "by_status": {s: by_status.get(s, 0) for s in _STATUSES},
         "sent_last_24h": sent_last_24h,
+        "sent_total": sent_total,
         "cap": cap,
         "daily_remaining": max(0, cap - sent_last_24h),
         "steps": len(campaign.sequence or []),

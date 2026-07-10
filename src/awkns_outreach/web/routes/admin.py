@@ -3,11 +3,12 @@ run actions. Server-rendered (Jinja2 + HTMX) so the whole service is one Python
 app with one deploy."""
 from __future__ import annotations
 
+from math import ceil
 from typing import Optional
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import HTMLResponse, RedirectResponse
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from awkns_outreach.apollo.client import domain_from_website
@@ -19,6 +20,18 @@ from awkns_outreach.web.deps import get_db, require_admin, templates
 from awkns_outreach.web.stats import campaign_stats
 
 router = APIRouter(dependencies=[Depends(require_admin)])
+
+# Dashboard pagination + status filter. "default" (absent/unknown) hides
+# archived campaigns; explicit "all" shows everything.
+PAGE_SIZE = 20
+_STATUS_FILTERS = ("active", "paused", "archived", "all")
+# Whitelisted status transitions for POST /campaigns/{id}/status: action -> {from: to}.
+_STATUS_TRANSITIONS = {
+    "archive": {"active": "archived", "paused": "archived"},
+    "unarchive": {"archived": "active"},
+    "pause": {"active": "paused"},
+    "resume": {"paused": "active"},
+}
 
 # Placeholders the mailer fills per lead (send/mailer.py `_context`). Shown as a
 # cheatsheet in the sequence editor.
@@ -47,12 +60,37 @@ def _read_seed_input(seed_file: Optional[UploadFile], seed_text: str) -> list[di
 
 
 @router.get("/", response_class=HTMLResponse)
-def dashboard(request: Request, db: Session = Depends(get_db)):
-    campaigns = db.scalars(select(Campaign).order_by(Campaign.created_at.desc())).all()
+def dashboard(
+    request: Request, db: Session = Depends(get_db),
+    status: Optional[str] = None, page: int = 1, msg: Optional[str] = None,
+):
+    """Campaign list: status filter (default hides archived) + a simple
+    offset pager. `msg` lands here after status-change/edit redirects."""
+    status_filter = status if status in _STATUS_FILTERS else "default"
+    stmt = select(Campaign)
+    if status_filter == "default":
+        stmt = stmt.where(Campaign.status.in_(["active", "paused"]))
+    elif status_filter != "all":
+        stmt = stmt.where(Campaign.status == status_filter)
+
+    total = db.scalar(select(func.count()).select_from(stmt.subquery())) or 0
+    pages = max(1, ceil(total / PAGE_SIZE))
+    page = min(max(1, page), pages)  # clamp to a valid page
+
+    campaigns = db.scalars(
+        stmt.order_by(Campaign.created_at.desc())
+        .limit(PAGE_SIZE).offset((page - 1) * PAGE_SIZE)
+    ).all()
     rows = [{"c": c, "stats": campaign_stats(db, c)} for c in campaigns]
+    any_campaigns = (db.scalar(select(func.count()).select_from(Campaign)) or 0) > 0
     suppressed = db.scalar(select(Suppression).with_only_columns(Suppression.email).limit(1))
     return templates.TemplateResponse(
-        request, "dashboard.html", {"rows": rows, "has_suppressions": suppressed is not None}
+        request, "dashboard.html",
+        {
+            "rows": rows, "has_suppressions": suppressed is not None,
+            "status_filter": status_filter, "page": page, "pages": pages, "total": total,
+            "page_size": PAGE_SIZE, "any_campaigns": any_campaigns, "msg": msg,
+        },
     )
 
 
@@ -95,6 +133,72 @@ def _get_campaign(db: Session, campaign_id: str) -> Campaign:
     if not c:
         raise HTTPException(404, "Campaign not found")
     return c
+
+
+@router.post("/campaigns/{campaign_id}/status")
+def change_campaign_status(
+    campaign_id: str,
+    action: str = Form(...),
+    status: str = Form("default"),
+    page: int = Form(1),
+    db: Session = Depends(get_db),
+):
+    """Archive / unarchive / pause / resume — one endpoint, a whitelisted
+    transition table. A no-op transition (e.g. pausing an already-paused
+    campaign) just redirects with a message, no error. Redirects back to the
+    operator's filtered/paginated dashboard view."""
+    c = _get_campaign(db, campaign_id)
+    transitions = _STATUS_TRANSITIONS.get(action)
+    if transitions is None:
+        raise HTTPException(400, f"Unknown action: {action}")
+    new_status = transitions.get(c.status)
+    if new_status is None:
+        msg = f"Campaign “{c.name}” is already {c.status}."
+    else:
+        c.status = new_status
+        db.commit()
+        msg = f"Campaign “{c.name}” {action}d."
+    return RedirectResponse(f"/?status={status}&page={page}&msg={msg}", status_code=303)
+
+
+def _archived_edit_guard(c: Campaign) -> Optional[RedirectResponse]:
+    """Server-side backup for the disabled Edit button/link: archived
+    campaigns can't be edited (both GET and POST) until unarchived."""
+    if c.status == "archived":
+        return RedirectResponse(
+            "/?msg=Archived campaigns can’t be edited — unarchive first.", status_code=303
+        )
+    return None
+
+
+@router.get("/campaigns/{campaign_id}/edit", response_class=HTMLResponse)
+def edit_campaign_form(campaign_id: str, request: Request, db: Session = Depends(get_db)):
+    c = _get_campaign(db, campaign_id)
+    blocked = _archived_edit_guard(c)
+    if blocked:
+        return blocked
+    return templates.TemplateResponse(request, "campaign_edit.html", {"c": c})
+
+
+@router.post("/campaigns/{campaign_id}/edit")
+def save_campaign_edit(
+    campaign_id: str,
+    name: str = Form(...),
+    description: str = Form(""),
+    titles: str = Form(""),
+    angle_prompt: str = Form(""),
+    db: Session = Depends(get_db),
+):
+    c = _get_campaign(db, campaign_id)
+    blocked = _archived_edit_guard(c)
+    if blocked:
+        return blocked
+    c.name = name.strip()
+    c.description = description.strip() or None
+    c.target_titles = _split_lines(titles)
+    c.angle_prompt = angle_prompt.strip() or None
+    db.commit()
+    return RedirectResponse(f"/campaigns/{c.id}?msg=Campaign updated.", status_code=303)
 
 
 @router.get("/campaigns/{campaign_id}", response_class=HTMLResponse)

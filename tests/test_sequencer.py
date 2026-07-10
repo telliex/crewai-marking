@@ -174,6 +174,32 @@ def test_rolling_24h_cap_enforced(db_session, monkeypatch):
     assert s.sent == 2  # budget capped this run
 
 
+def test_process_campaign_blocked_when_paused_or_archived(db_session, monkeypatch):
+    """A paused/archived campaign must not send for real; dry-run previews
+    stay allowed regardless of status."""
+    _mock_ok(monkeypatch)
+    c = _campaign(db_session)
+    c.status = "paused"
+    lead = _lead(db_session, c)
+    db_session.commit()
+
+    s = engine.process_campaign(db_session, c, dry_run=False, now=NOW, ignore_hours=True, gap_ms=0)
+    assert s.blocked == "campaign is paused"
+    assert s.sent == 0
+    db_session.refresh(lead)
+    assert lead.step == 0 and lead.status == "active"
+
+    c.status = "archived"
+    db_session.commit()
+    s2 = engine.process_campaign(db_session, c, dry_run=False, now=NOW, ignore_hours=True, gap_ms=0)
+    assert s2.blocked == "campaign is archived"
+    assert s2.sent == 0
+
+    s3 = engine.process_campaign(db_session, c, dry_run=True, now=NOW, ignore_hours=True)
+    assert s3.blocked is None
+    assert s3.sent == 1
+
+
 def test_cas_claim_is_single_winner(db_session):
     """The compare-and-swap that prevents double-sends: only the first UPDATE
     active→sending at (id, step) wins; a second sees rowcount 0."""

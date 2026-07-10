@@ -1,0 +1,32 @@
+{% extends "base.html" %}
+{% block title %}Edit {{ c.name }}{% endblock %}
+{% block content %}
+<a href="/campaigns/{{ c.id }}" class="text-xs text-slate-500 hover:underline">&larr; {{ c.name }}</a>
+<h1 class="text-lg font-semibold mb-4">Edit campaign</h1>
+
+<form method="post" action="/campaigns/{{ c.id }}/edit" class="max-w-xl space-y-4">
+  <div>
+    <label class="block text-sm font-medium mb-1">Name</label>
+    <input name="name" required value="{{ c.name }}" class="w-full border rounded px-2 py-1.5">
+  </div>
+  <div>
+    <label class="block text-sm font-medium mb-1">Description <span class="text-slate-400 font-normal">(optional)</span></label>
+    <textarea name="description" rows="2" class="w-full border rounded px-2 py-1.5"
+      placeholder="A short note to tell this campaign apart on the dashboard.">{{ c.description or "" }}</textarea>
+  </div>
+  <div>
+    <label class="block text-sm font-medium mb-1">Target titles</label>
+    <textarea name="titles" rows="3" class="w-full border rounded px-2 py-1.5"
+      placeholder="one per line, or comma-separated">{{ c.target_titles|join("\n") }}</textarea>
+  </div>
+  <div>
+    <label class="block text-sm font-medium mb-1">Angle prompt <span class="text-slate-400 font-normal">(optional)</span></label>
+    <textarea name="angle_prompt" rows="2" class="w-full border rounded px-2 py-1.5"
+      placeholder="Leave blank to use the default research prompt.">{{ c.angle_prompt or "" }}</textarea>
+  </div>
+  <div class="flex gap-2">
+    <button class="rounded bg-slate-900 text-white text-sm px-4 py-2">Save</button>
+    <a href="/campaigns/{{ c.id }}" class="rounded border text-sm px-4 py-2">Cancel</a>
+  </div>
+</form>
+{% endblock %}
