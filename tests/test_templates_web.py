@@ -150,9 +150,35 @@ def test_new_template_page_returns_ok_with_connected_mailboxes(client, session):
 
     r = client.get("/templates/new", auth=AUTH)
     assert r.status_code == 200
-    # HTML rendering of the mailbox picker is Task 6's responsibility (the
-    # two-column template that actually includes the mailbox select) — this
-    # test only verifies the route builds its context without error.
+    # Task 6's two-column template now actually includes the mailbox-picker
+    # partial, so the connected mailbox's address should show up in the HTML.
+    assert mb.email in r.text
+
+
+def test_new_template_page_is_two_column_with_preview_and_toolbar(client, session):
+    r = client.get("/templates/new", auth=AUTH)
+    assert r.status_code == 200
+    assert "Template Preview" in r.text
+    assert 'id="preview-pane"' in r.text
+    assert 'id="body-field"' in r.text
+    # 5-button toolbar: T, link, image, attachment, code-view
+    assert "twToggleFormatHelp" in r.text
+    assert "twOpenLinkPopover" in r.text
+    assert 'accept="image/*"' in r.text
+    assert "twToggleCodeView" in r.text
+    # test-send widget present even though nothing is saved yet
+    assert "Send Test Email to Me" in r.text
+
+
+def test_edit_template_page_prefills_preview_from_saved_body(client, session):
+    t = EmailTemplate(name="Intro", subject="hi {company}", body="Hi {first_name}, {angle}")
+    session.add(t)
+    session.commit()
+
+    r = client.get(f"/templates/{t.id}/edit", auth=AUTH)
+    assert r.status_code == 200
+    assert "hi Acme Studios" in r.text  # right column pre-rendered from saved body, no extra request
+    assert "Hi Jamie," in r.text
 
 
 def test_edit_archived_template_blocked_get_and_post(client, session):
