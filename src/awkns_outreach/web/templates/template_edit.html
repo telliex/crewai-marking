@@ -42,9 +42,17 @@
             class="rounded border border-red-300 text-red-700 text-sm px-4 py-2 ml-auto">Delete</button>
   </div>
   {% else %}
-  <div class="flex gap-2">
+  <div class="flex flex-wrap items-center gap-2">
     <button class="rounded bg-slate-900 text-white text-sm px-4 py-2">Create</button>
     <a href="/templates" class="rounded border text-sm px-4 py-2">Cancel</a>
+    {% if mailboxes %}
+    <select name="mailbox_id" class="border rounded px-2 py-1.5 text-sm">
+      <option value="">Resend (default)</option>
+      {% for mb in mailboxes %}
+      <option value="{{ mb.id }}">{{ mb.email }}</option>
+      {% endfor %}
+    </select>
+    {% endif %}
   </div>
   {% endif %}
 </form>

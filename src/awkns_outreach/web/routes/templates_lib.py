@@ -102,10 +102,16 @@ def list_templates(request: Request, db: Session = Depends(get_db), msg: Optiona
 
 
 @router.get("/templates/new", response_class=HTMLResponse)
-def new_template_form(request: Request):
+def new_template_form(request: Request, db: Session = Depends(get_db)):
     return templates.TemplateResponse(
         request, "template_edit.html",
-        {"t": None, "preview": None, "placeholders": SEQUENCE_PLACEHOLDERS, "mailboxes": [], "msg": None},
+        {
+            "t": None, "placeholders": SEQUENCE_PLACEHOLDERS, "msg": None,
+            "preview": _render_preview("", ""),
+            "mailboxes": _connected_mailboxes(db),
+            "selected_mailbox_id": None,
+            "test_send_msg": None,
+        },
     )
 
 
@@ -125,16 +131,29 @@ def edit_template_form(
     template_id: str, request: Request, db: Session = Depends(get_db), msg: Optional[str] = None,
 ):
     t = _get_template(db, template_id)
+    blocked = _archived_edit_guard(t)
+    if blocked:
+        return blocked
     return templates.TemplateResponse(
         request, "template_edit.html",
         {
-            "t": t, "preview": None, "placeholders": SEQUENCE_PLACEHOLDERS,
-            "mailboxes": _connected_mailboxes(db), "msg": msg,
+            "t": t, "placeholders": SEQUENCE_PLACEHOLDERS, "msg": msg,
+            "preview": _render_preview(t.subject, t.body),
+            "mailboxes": _connected_mailboxes(db),
+            "selected_mailbox_id": None,
+            "test_send_msg": None,
         },
     )
 
 
-def _archived_edit_guard(t: EmailTemplate):
+def _archived_edit_guard(t: EmailTemplate) -> Optional[RedirectResponse]:
+    """Server-side backup for the disabled Edit link: archived templates
+    can't be edited (both GET and POST) until unarchived."""
+    if t.status == "archived":
+        return RedirectResponse(
+            "/templates?msg=Archived templates can't be edited — unarchive first.",
+            status_code=303,
+        )
     return None
 
 

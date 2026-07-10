@@ -138,3 +138,34 @@ def test_test_send_fragment_uses_gmail_mailbox_recipient(client, session):
     assert gmail_route.called
     assert f"Test email sent! Check your inbox at {mb.email}." in r.text
     assert f'value="{mb.id}" selected' in r.text  # selection preserved after swap
+
+
+def test_new_template_page_lists_connected_mailboxes(client, session):
+    mb = Mailbox(
+        email="steven@gmail.com", access_token="at", refresh_token="rt",
+        token_expiry=datetime.now(timezone.utc) + timedelta(hours=1), status="connected",
+    )
+    session.add(mb)
+    session.commit()
+
+    r = client.get("/templates/new", auth=AUTH)
+    assert r.status_code == 200
+    assert "steven@gmail.com" in r.text
+
+
+def test_edit_archived_template_blocked_get_and_post(client, session):
+    t = EmailTemplate(name="Frozen", subject="s", body="b", status="archived")
+    session.add(t)
+    session.commit()
+
+    get_r = client.get(f"/templates/{t.id}/edit", auth=AUTH, follow_redirects=False)
+    assert get_r.status_code == 303
+    assert get_r.headers["location"].startswith("/templates?msg=")
+
+    post_r = client.post(f"/templates/{t.id}/edit", auth=AUTH, follow_redirects=False, data={
+        "action": "save", "name": "Should not save", "subject": "x", "body": "x",
+    })
+    assert post_r.status_code == 303
+    assert post_r.headers["location"].startswith("/templates?msg=")
+    session.refresh(t)
+    assert t.name == "Frozen"  # unchanged
