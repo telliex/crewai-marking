@@ -93,6 +93,9 @@ class Campaign(Base):
         back_populates="campaign", cascade="all, delete-orphan"
     )
     mailbox: Mapped[Optional["Mailbox"]] = relationship(back_populates="campaigns")
+    mail_sequences: Mapped[list["MailSequence"]] = relationship(
+        back_populates="campaign", cascade="all, delete-orphan"
+    )
 
 
 class Lead(Base):
@@ -265,3 +268,48 @@ class EmailTemplate(Base):
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
     )
+
+
+class MailSequence(Base):
+    """A standalone marketing campaign: targets one existing `Campaign` (a
+    "Group" of leads) and runs an ordered list of email steps against it.
+    Steps are copied `EmailTemplate` instances, not live references — once a
+    sequence starts, its `steps` are a snapshot, so later edits to the source
+    templates don't change an in-flight send."""
+
+    __tablename__ = "mail_sequence"
+
+    id: Mapped[str] = mapped_column(String, primary_key=True, default=_uuid)
+    name: Mapped[str] = mapped_column(String, nullable=False)
+    campaign_id: Mapped[str] = mapped_column(
+        ForeignKey("campaign.id", ondelete="CASCADE"), nullable=False
+    )
+    # draft | scheduled | running | paused | stopped | completed
+    status: Mapped[str] = mapped_column(String, default="draft", nullable=False)
+
+    scheduled_start_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    started_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    completed_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+
+    # Ordered step list, snapshotted from EmailTemplate rows at build time:
+    # {key, delay_days, subject, body, attachments, source_template_id}.
+    # `source_template_id` is kept for provenance/re-editing only — it is not
+    # dereferenced at send time.
+    steps: Mapped[list[dict[str, Any]]] = mapped_column(
+        JSONType, default=list, nullable=False
+    )
+
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+    campaign: Mapped["Campaign"] = relationship(back_populates="mail_sequences")
