@@ -120,45 +120,23 @@ def test_admin_create_and_view_campaign(client, session, monkeypatch):
     assert detail.status_code == 200 and "JP studios" in detail.text
 
 
-def test_sequence_editor_saves_steps(client, session, monkeypatch):
+def test_legacy_sequence_editor_redirects_to_sequences(client, session, monkeypatch):
     monkeypatch.setattr(settings, "admin_password", "secret")
     auth = ("admin", "secret")
     c = Campaign(name="c", target_titles=[], seed_companies=[], sequence=[], sender_identity={})
     session.add(c)
     session.commit()
 
-    # Editor page renders (with the placeholder cheatsheet).
-    page = client.get(f"/campaigns/{c.id}/sequence", auth=auth)
-    assert page.status_code == 200 and "{angle}" in page.text
-
-    # Save two steps; a fully-blank third row is dropped.
-    r = client.post(f"/campaigns/{c.id}/sequence", auth=auth, follow_redirects=False, data={
-        "step_key": ["intro", "bump", ""],
-        "delay_days": ["0", "3", "0"],
-        "subject": ["quick idea for {company}", "re: quick idea", ""],
-        "body": ["Hi {first_name}, {angle}", "floating back up", ""],
-    })
+    r = client.get(f"/campaigns/{c.id}/sequence", auth=auth, follow_redirects=False)
     assert r.status_code == 303
-    session.refresh(c)
-    assert len(c.sequence) == 2
-    assert c.sequence[0] == {"key": "intro", "delay_days": 0,
-                             "subject": "quick idea for {company}", "body": "Hi {first_name}, {angle}"}
-    assert c.sequence[1]["key"] == "bump" and c.sequence[1]["delay_days"] == 3
+    assert r.headers["location"] == "/sequences"
 
 
-def test_sequence_editor_clearing_all_steps(client, session, monkeypatch):
+def test_legacy_sequence_editor_404s_for_missing_campaign(client, monkeypatch):
     monkeypatch.setattr(settings, "admin_password", "secret")
-    c = Campaign(name="c", target_titles=[], seed_companies=[],
-                 sequence=[{"key": "x", "delay_days": 0, "subject": "s", "body": "b"}],
-                 sender_identity={})
-    session.add(c)
-    session.commit()
-    r = client.post(f"/campaigns/{c.id}/sequence", auth=("admin", "secret"),
-                    follow_redirects=False, data={"step_key": [], "delay_days": [],
-                                                  "subject": [], "body": []})
-    assert r.status_code == 303
-    session.refresh(c)
-    assert c.sequence == []
+    r = client.get("/campaigns/does-not-exist/sequence", auth=("admin", "secret"),
+                    follow_redirects=False)
+    assert r.status_code == 404
 
 
 # --- dashboard: status filter, archive/pause lifecycle, edit, pagination --

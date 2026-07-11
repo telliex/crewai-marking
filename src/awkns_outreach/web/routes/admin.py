@@ -14,7 +14,7 @@ from sqlalchemy.orm import Session
 from awkns_outreach.apollo.client import domain_from_website
 from awkns_outreach.apollo.enrich import enrich_campaign
 from awkns_outreach.apollo.seed import SEED_FIELDS, parse_seed_companies
-from awkns_outreach.db.models import Campaign, EmailTemplate, Lead, MailSequence, Mailbox, Suppression
+from awkns_outreach.db.models import Campaign, Lead, MailSequence, Mailbox, Suppression
 from awkns_outreach.sequencer import process_campaign
 from awkns_outreach.web.deps import get_db, require_admin, templates
 from awkns_outreach.web.stats import campaign_stats
@@ -277,53 +277,10 @@ def run_sequencer(
     return RedirectResponse(f"/campaigns/{c.id}?msg={msg}", status_code=303)
 
 
-@router.get("/campaigns/{campaign_id}/sequence", response_class=HTMLResponse)
-def edit_sequence_form(campaign_id: str, request: Request, db: Session = Depends(get_db)):
-    c = _get_campaign(db, campaign_id)
-    # Templates as a JSON blob in the page — the "insert template" dropdown
-    # copies subject/body into a step client-side, no extra round-trip.
-    template_options = [
-        {"id": t.id, "name": t.name, "subject": t.subject, "body": t.body}
-        for t in db.scalars(select(EmailTemplate).order_by(EmailTemplate.name)).all()
-    ]
-    return templates.TemplateResponse(
-        request, "sequence_edit.html",
-        {
-            "c": c, "steps": c.sequence or [], "placeholders": SEQUENCE_PLACEHOLDERS,
-            "template_options": template_options,
-        },
-    )
-
-
-@router.post("/campaigns/{campaign_id}/sequence")
-def save_sequence(
-    campaign_id: str,
-    step_key: list[str] = Form(default=[]),
-    delay_days: list[str] = Form(default=[]),
-    subject: list[str] = Form(default=[]),
-    body: list[str] = Form(default=[]),
-    db: Session = Depends(get_db),
-):
-    c = _get_campaign(db, campaign_id)
-    steps: list[dict] = []
-    for i, (k, d, subj, b) in enumerate(zip(step_key, delay_days, subject, body)):
-        # Skip fully blank rows (a step needs at least a subject or a body).
-        if not subj.strip() and not b.strip():
-            continue
-        try:
-            delay = max(0, int(d))
-        except (TypeError, ValueError):
-            delay = 0
-        steps.append({
-            "key": k.strip() or f"step{i + 1}",
-            "delay_days": delay,
-            "subject": subj.strip(),
-            "body": b.rstrip(),
-        })
-    c.sequence = steps
-    db.commit()
-    msg = f"Sequence saved: {len(steps)} step(s)."
-    return RedirectResponse(f"/campaigns/{c.id}?msg={msg}", status_code=303)
+@router.get("/campaigns/{campaign_id}/sequence")
+def edit_sequence_form(campaign_id: str, db: Session = Depends(get_db)):
+    _get_campaign(db, campaign_id)  # 404s if the campaign doesn't exist, same as before
+    return RedirectResponse("/sequences", status_code=303)
 
 
 @router.get("/campaigns/{campaign_id}/companies", response_class=HTMLResponse)

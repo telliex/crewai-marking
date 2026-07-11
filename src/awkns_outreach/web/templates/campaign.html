@@ -26,14 +26,14 @@
 <div class="rounded border bg-white px-3 py-2 mb-6 text-sm text-slate-600 flex items-center gap-3">
   <span>Sent last 24h: <b>{{ stats.sent_last_24h }}</b> · Daily cap: <b>{{ stats.cap }}</b> ·
   Remaining today: <b>{{ stats.daily_remaining }}</b> · Sequence steps: <b>{{ stats.steps }}</b></span>
-  <a href="/campaigns/{{ c.id }}/sequence"
+  <a href="/sequences"
      class="ml-auto rounded border bg-white text-xs px-2 py-1 hover:bg-slate-50">
-    {% if stats.steps %}Edit sequence{% else %}⚠ Set up sequence{% endif %}
+    View sequences
   </a>
 </div>
 {% if not stats.steps %}
 <div class="mb-6 rounded border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
-  This campaign has no email sequence yet — <a href="/campaigns/{{ c.id }}/sequence" class="underline font-medium">set it up</a> before running, or nothing will send.
+  This campaign (group) has no email sequence yet — <a href="/sequences/new" class="underline font-medium">create one</a> and start it from the Tasks page before running, or nothing will send.
 </div>
 {% endif %}
 {% if c.mailbox and c.mailbox.status == "needs_reconnect" %}
