@@ -12,6 +12,24 @@ function twEscapeHtml(s) {
   return d.innerHTML;
 }
 
+function twSetEditorBody(quill, rawBody) {
+  // Loads `rawBody` into `quill`, detecting legacy plain-text vs. HTML.
+  // Shared by initial page load (twInitEditor) and mid-editing template
+  // inserts (the sequence editor's "insert template" picker).
+  quill.setText('');
+  if (!rawBody) return;
+  if (rawBody.includes('<')) {
+    quill.clipboard.dangerouslyPasteHTML(rawBody);
+  } else {
+    // Legacy plain-text template (predates the rich-text editor): preserve
+    // blank-line paragraph breaks the same way the old send pipeline did.
+    const html = rawBody.split(/\n{2,}/).map(
+      (p) => '<p>' + p.split('\n').map(twEscapeHtml).join('<br>') + '</p>'
+    ).join('');
+    quill.clipboard.dangerouslyPasteHTML(html);
+  }
+}
+
 function twInitEditor(rootEl) {
   const quill = new Quill(rootEl.querySelector('.tw-quill-editor'), {
     theme: 'snow',
@@ -23,18 +41,7 @@ function twInitEditor(rootEl) {
 
   const bodyInitialEl = rootEl.querySelector('.tw-body-initial');
   const rawBody = bodyInitialEl ? bodyInitialEl.value : '';
-  if (rawBody) {
-    if (rawBody.includes('<')) {
-      quill.clipboard.dangerouslyPasteHTML(rawBody);
-    } else {
-      // Legacy plain-text template (predates the rich-text editor): preserve
-      // blank-line paragraph breaks the same way the old send pipeline did.
-      const html = rawBody.split(/\n{2,}/).map(
-        (p) => '<p>' + p.split('\n').map(twEscapeHtml).join('<br>') + '</p>'
-      ).join('');
-      quill.clipboard.dangerouslyPasteHTML(html);
-    }
-  }
+  twSetEditorBody(quill, rawBody);
 
   const bodyField = rootEl.querySelector('.tw-body-field');
   function twSyncBody() {

@@ -2,12 +2,16 @@
 edit, delete. Each sequence targets one existing Campaign ("Group") and
 snapshots an ordered list of email steps — see `MailSequence` in db/models.py.
 
-This task's editor page is a deliberately plain form (inputs + textareas);
-the rich multi-Quill editor lands in Task 3. Lifecycle actions
-(schedule/start/pause/stop) land in Task 4 — not built here.
+The editor page gives each step its own rich Quill editor, live HTMX
+preview, and test-send widget (Task 3b), reusing the same
+`_template_preview_fragment.html` / `_template_test_send_fragment.html`
+fragments and `_render_preview`/`_connected_mailboxes` helpers as the
+single-template editor. Lifecycle actions (schedule/start/pause/stop) land
+in Task 4 — not built here.
 """
 from __future__ import annotations
 
+import json
 from typing import Optional
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Request
@@ -18,7 +22,12 @@ from sqlalchemy.orm import Session
 from awkns_outreach.db.models import Campaign, EmailTemplate, MailSequence
 from awkns_outreach.web.deps import get_db, require_admin, templates
 from awkns_outreach.web.routes.admin import SEQUENCE_PLACEHOLDERS
-from awkns_outreach.web.routes.templates_lib import _clean_body, _parse_attachments
+from awkns_outreach.web.routes.templates_lib import (
+    _clean_body,
+    _connected_mailboxes,
+    _parse_attachments,
+    _render_preview,
+)
 
 router = APIRouter(dependencies=[Depends(require_admin)])
 
@@ -62,6 +71,23 @@ def _template_options(db: Session) -> list[dict]:
             select(EmailTemplate).where(EmailTemplate.status == "active").order_by(EmailTemplate.name)
         ).all()
     ]
+
+
+def _steps_for_editor(steps: list[dict]) -> list[dict]:
+    """Augment each saved step dict with the two derived keys the editor
+    template needs but doesn't persist: `attachments_json` (for the rich
+    editor's hidden attachments-initial field) and `preview` (the card's
+    initial preview-pane render, before any HTMX interaction) — mirrors
+    templates_lib.py's edit_template_form convention exactly."""
+    out = []
+    for step in steps:
+        step = dict(step)
+        step["attachments_json"] = json.dumps(step.get("attachments") or [])
+        step["preview"] = _render_preview(
+            step.get("subject", ""), step.get("body", ""), step.get("attachments") or []
+        )
+        out.append(step)
+    return out
 
 
 def _build_steps(
@@ -119,6 +145,8 @@ def new_sequence_form(request: Request, db: Session = Depends(get_db), msg: Opti
         request, "mail_sequence_edit.html",
         {
             "seq": None, "groups": _campaign_groups(db), "template_options": _template_options(db),
+            "steps_for_editor": _steps_for_editor([]),
+            "mailboxes": _connected_mailboxes(db),
             "placeholders": SEQUENCE_PLACEHOLDERS, "form_action": "/sequences", "msg": msg,
         },
     )
@@ -161,6 +189,8 @@ def edit_sequence_form(
         request, "mail_sequence_edit.html",
         {
             "seq": seq, "groups": _campaign_groups(db), "template_options": _template_options(db),
+            "steps_for_editor": _steps_for_editor(seq.steps or []),
+            "mailboxes": _connected_mailboxes(db),
             "placeholders": SEQUENCE_PLACEHOLDERS, "form_action": f"/sequences/{seq.id}/edit", "msg": msg,
         },
     )

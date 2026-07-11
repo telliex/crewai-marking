@@ -69,11 +69,5 @@
 {% include "_rich_editor_script.html" %}
 <script>
 twInitEditor(document.querySelector('.tw-editor'));
-
-function twMailboxFieldChanged(select) {
-  const isCustom = select.value === '__custom__';
-  document.getElementById('custom-recipients-field').classList.toggle('hidden', !isCustom);
-  document.getElementById('test-send-button').textContent = isCustom ? 'Send Test Email' : 'Send Test Email to Me';
-}
 </script>
 {% endblock %}

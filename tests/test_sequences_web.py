@@ -175,6 +175,60 @@ def test_edit_form_prefills_existing_sequence(client, session):
     assert "hi {company}" in r.text
 
 
+def test_edit_page_renders_rich_quill_editor_per_step(client, session):
+    c = _make_campaign(session)
+    seq = MailSequence(
+        name="Rich seq", campaign_id=c.id, status="draft",
+        steps=[{"key": "intro", "delay_days": 0, "subject": "s", "body": "b",
+                "attachments": [], "source_template_id": None}],
+    )
+    session.add(seq)
+    session.commit()
+
+    r = client.get(f"/sequences/{seq.id}/edit", auth=AUTH)
+    assert r.status_code == 200
+    # A real per-step Quill editor replaces the old plain <textarea name="body">.
+    assert "<textarea name=\"body\"" not in r.text
+    assert 'class="tw-editor' in r.text
+    assert "tw-quill-toolbar" in r.text
+    assert "tw-quill-editor" in r.text
+
+
+def test_edit_page_renders_independent_editor_per_step(client, session):
+    c = _make_campaign(session)
+    seq = MailSequence(
+        name="Two steps", campaign_id=c.id, status="draft",
+        steps=[
+            {"key": "intro", "delay_days": 0, "subject": "first subject line",
+             "body": "first body text", "attachments": [], "source_template_id": None},
+            {"key": "bump", "delay_days": 3, "subject": "second subject line",
+             "body": "second body text", "attachments": [], "source_template_id": None},
+        ],
+    )
+    session.add(seq)
+    session.commit()
+
+    r = client.get(f"/sequences/{seq.id}/edit", auth=AUTH)
+    assert r.status_code == 200
+    # The page also carries one hidden `<template id="step-tpl">` clone
+    # source (used by addStep()'s JS, unrelated to the two real steps) which
+    # itself contains one more copy of the same markup — exclude it so this
+    # only counts the two live, server-rendered step cards.
+    live_steps_html = r.text.split('<template id="step-tpl">')[0]
+    # Two independent editor instances (and preview/test-send widgets) render,
+    # each multi-instance-safe (no shared/global ids). Match on each markup
+    # block's actual opening tag rather than a bare class name, since the
+    # editor's <style> block (embedded once per instance, by Task 3a design)
+    # also mentions "tw-quill-toolbar" as a CSS selector.
+    assert live_steps_html.count('<div class="tw-editor border rounded overflow-visible">') == 2
+    assert live_steps_html.count('<div class="tw-quill-toolbar flex') == 2
+    assert live_steps_html.count('class="tw-preview-pane"') == 2
+    assert live_steps_html.count('id="test-send-widget" class="tw-test-send-widget') == 2
+    # Both steps' own content is present, not just the first one's.
+    assert "first subject line" in r.text and "second subject line" in r.text
+    assert "first body text" in r.text and "second body text" in r.text
+
+
 def test_edit_and_delete_blocked_while_running(client, session):
     c = _make_campaign(session)
     seq = MailSequence(name="Live seq", campaign_id=c.id, status="running", steps=[])
