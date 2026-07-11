@@ -1,0 +1,122 @@
+{% extends "base.html" %}
+{% block title %}{% if seq %}Edit {{ seq.name }}{% else %}New sequence{% endif %} — Awkns Outreach{% endblock %}
+
+{% macro step_block(step) %}
+<div class="step-block rounded border bg-white p-4 mb-3">
+  <div class="flex items-center justify-between mb-3">
+    <h3 class="text-sm font-semibold text-slate-700">Step <span class="step-num"></span></h3>
+    <button type="button" onclick="removeStep(this)"
+            class="text-xs text-red-600 hover:underline">Remove</button>
+  </div>
+  <div class="grid grid-cols-1 md:grid-cols-3 gap-3 mb-3">
+    <label class="text-xs text-slate-500">Key (label for logs)
+      <input name="step_key" value="{{ step.key or '' }}"
+             class="mt-1 w-full border rounded px-2 py-1.5 text-sm" placeholder="intro">
+    </label>
+    <label class="text-xs text-slate-500">Delay (days after previous)
+      <input name="delay_days" type="number" min="0" value="{{ step.delay_days if step.delay_days is not none else 0 }}"
+             class="mt-1 w-full border rounded px-2 py-1.5 text-sm">
+    </label>
+    <label class="text-xs text-slate-500 md:col-span-1">Subject
+      <input name="subject" value="{{ step.subject or '' }}"
+             class="mt-1 w-full border rounded px-2 py-1.5 text-sm" placeholder="quick idea for {company}">
+    </label>
+  </div>
+  <label class="text-xs text-slate-500 block">Body
+    <textarea name="body" rows="6"
+              class="mt-1 w-full border rounded px-2 py-1.5 text-sm font-mono"
+              placeholder="Hi {first_name},&#10;&#10;{angle}&#10;&#10;{sender_name}">{{ step.body or '' }}</textarea>
+  </label>
+  <input type="hidden" name="attachments" class="step-attachments" value='{{ (step.attachments or [])|tojson }}'>
+  <input type="hidden" name="source_template_id" class="step-source-template-id" value="{{ step.source_template_id or '' }}">
+  {% if template_options %}
+  <label class="text-xs text-slate-500 block mt-2">Insert template <span class="text-slate-400 font-normal">(overwrites subject/body above)</span>
+    <select class="template-picker mt-1 border rounded px-2 py-1 text-sm" onchange="insertTemplate(this)">
+      <option value="">— choose a template —</option>
+      {% for tpl in template_options %}
+      <option value="{{ loop.index0 }}">{{ tpl.name }}</option>
+      {% endfor %}
+    </select>
+  </label>
+  {% endif %}
+</div>
+{% endmacro %}
+
+{% block content %}
+<a href="/sequences" class="text-xs text-slate-500 hover:underline">&larr; Sequences</a>
+<h1 class="text-lg font-semibold mb-4">{% if seq %}Edit sequence{% else %}New sequence{% endif %}</h1>
+
+<div class="mb-4 rounded border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600">
+  Placeholders (filled per lead):
+  {% for p in placeholders %}<code class="mx-0.5 rounded bg-white border px-1">{{ '{' ~ p ~ '}' }}</code>{% endfor %}
+  · The identity footer + unsubscribe line are added automatically.
+  · Manage reusable copy in the <a href="/templates" class="underline">template library</a>.
+</div>
+
+<form method="post" action="{{ form_action }}" class="space-y-4">
+  <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+    <label class="text-sm font-medium">Name
+      <input name="name" required value="{{ seq.name if seq else '' }}"
+             class="mt-1 w-full border rounded px-2 py-1.5 text-sm">
+    </label>
+    <label class="text-sm font-medium">Group
+      <select name="campaign_id" required class="mt-1 w-full border rounded px-2 py-1.5 text-sm">
+        <option value="">— choose a group —</option>
+        {% for g in groups %}
+        <option value="{{ g.id }}" {% if seq and seq.campaign_id == g.id %}selected{% endif %}>{{ g.name }}</option>
+        {% endfor %}
+      </select>
+    </label>
+  </div>
+
+  <div id="steps">
+    {% for step in (seq.steps if seq else []) %}{{ step_block(step) }}{% endfor %}
+  </div>
+
+  <div class="flex flex-wrap gap-2">
+    <button type="button" onclick="addStep()" class="rounded border bg-white text-sm px-3 py-1.5">+ Add step</button>
+  </div>
+
+  <div class="flex gap-2">
+    <button type="submit" class="rounded bg-slate-900 text-white text-sm px-4 py-2">{% if seq %}Save{% else %}Create{% endif %}</button>
+    <a href="/sequences" class="rounded border text-sm px-4 py-2">Cancel</a>
+  </div>
+</form>
+
+<template id="step-tpl">{{ step_block({}) }}</template>
+
+<script>
+  // Templates as a JSON blob in the page — the picker copies subject/body
+  // (and attachments/source id) into that step's fields client-side.
+  const TEMPLATES = {{ template_options|tojson }};
+
+  function insertTemplate(select) {
+    const tpl = TEMPLATES[parseInt(select.value, 10)];
+    if (!tpl) return;
+    const block = select.closest('.step-block');
+    block.querySelector('[name=subject]').value = tpl.subject || '';
+    block.querySelector('[name=body]').value = tpl.body || '';
+    block.querySelector('.step-attachments').value = JSON.stringify(tpl.attachments || []);
+    block.querySelector('.step-source-template-id').value = tpl.id || '';
+    select.value = '';
+  }
+
+  function renumber() {
+    document.querySelectorAll('#steps .step-block .step-num')
+      .forEach((el, i) => el.textContent = i + 1);
+  }
+  function addStep() {
+    const tpl = document.getElementById('step-tpl');
+    const node = tpl.content.firstElementChild.cloneNode(true);
+    document.getElementById('steps').appendChild(node);
+    renumber();
+  }
+  function removeStep(btn) {
+    btn.closest('.step-block').remove();
+    renumber();
+  }
+  // Start with one empty step if the sequence has none yet.
+  renumber();
+  if (document.querySelectorAll('#steps .step-block').length === 0) addStep();
+</script>
+{% endblock %}

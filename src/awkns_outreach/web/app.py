@@ -11,7 +11,7 @@ from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 
 from awkns_outreach.uploads import UPLOAD_DIR
-from awkns_outreach.web.routes import admin, mailboxes, public, templates_lib
+from awkns_outreach.web.routes import admin, mailboxes, public, sequences, templates_lib
 
 
 def create_app() -> FastAPI:
@@ -20,6 +20,7 @@ def create_app() -> FastAPI:
     app.include_router(admin.router)
     app.include_router(mailboxes.router)
     app.include_router(templates_lib.router)
+    app.include_router(sequences.router)
 
     UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
     app.mount("/uploads", StaticFiles(directory=UPLOAD_DIR), name="uploads")
