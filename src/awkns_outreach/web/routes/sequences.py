@@ -12,7 +12,9 @@ in Task 4 — not built here.
 from __future__ import annotations
 
 import json
+from datetime import datetime, timezone
 from typing import Optional
+from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
@@ -20,6 +22,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from awkns_outreach.db.models import Campaign, EmailTemplate, MailSequence
+from awkns_outreach.sequencer import lifecycle
 from awkns_outreach.web.deps import get_db, require_admin, templates
 from awkns_outreach.web.routes.admin import SEQUENCE_PLACEHOLDERS
 from awkns_outreach.web.routes.templates_lib import (
@@ -30,6 +33,16 @@ from awkns_outreach.web.routes.templates_lib import (
 )
 
 router = APIRouter(dependencies=[Depends(require_admin)])
+
+# Actions dispatched by POST /sequences/{id}/lifecycle — mirrors admin.py's
+# _STATUS_TRANSITIONS-style whitelist, but as functions (each transition has
+# non-trivial side effects: snapshotting steps, resetting lead cursors, etc).
+_LIFECYCLE_ACTIONS = {
+    "pause": lambda db, seq, now: lifecycle.pause_sequence(db, seq),
+    "resume": lambda db, seq, now: lifecycle.resume_sequence(db, seq),
+    "stop": lambda db, seq, now: lifecycle.stop_sequence(db, seq),
+    "start": lambda db, seq, now: lifecycle.start_sequence(db, seq, now),
+}
 
 _STATUS_FILTERS = ("draft", "scheduled", "running", "paused", "stopped", "completed", "all")
 # Only pre-start sequences can still have their name/group/steps changed.
@@ -239,3 +252,57 @@ def update_sequence(
     seq.steps = _build_steps(step_key, delay_days, subject, body, attachments, source_template_id)
     db.commit()
     return RedirectResponse(f"/sequences/{seq.id}/edit?msg=Sequence saved.", status_code=303)
+
+
+@router.get("/tasks", response_class=HTMLResponse)
+def list_tasks(request: Request, db: Session = Depends(get_db), msg: Optional[str] = None):
+    """Tasks page: every MailSequence with its lifecycle controls. Newest
+    first (same campaign_names dict-lookup pattern as list_sequences)."""
+    items = db.scalars(select(MailSequence).order_by(MailSequence.created_at.desc())).all()
+    campaign_names = {c.id: c.name for c in db.scalars(select(Campaign)).all()}
+    rows = [{"s": s, "campaign_name": campaign_names.get(s.campaign_id, "—")} for s in items]
+    return templates.TemplateResponse(
+        request, "tasks.html",
+        {"rows": rows, "editable_statuses": _EDITABLE_STATUSES, "msg": msg},
+    )
+
+
+@router.post("/sequences/{seq_id}/schedule")
+def schedule_sequence_route(
+    seq_id: str,
+    scheduled_start_at: str = Form(...),
+    db: Session = Depends(get_db),
+):
+    seq = _get_sequence(db, seq_id)
+    try:
+        when = (
+            datetime.fromisoformat(scheduled_start_at)
+            .replace(tzinfo=ZoneInfo("Asia/Taipei"))
+            .astimezone(timezone.utc)
+        )
+    except ValueError:
+        return RedirectResponse("/tasks?msg=Invalid date/time.", status_code=303)
+    _ok, msg = lifecycle.schedule_sequence(db, seq, when)
+    return RedirectResponse(f"/tasks?msg={msg}", status_code=303)
+
+
+@router.post("/sequences/{seq_id}/unschedule")
+def unschedule_sequence_route(seq_id: str, db: Session = Depends(get_db)):
+    seq = _get_sequence(db, seq_id)
+    _ok, msg = lifecycle.unschedule_sequence(db, seq)
+    return RedirectResponse(f"/tasks?msg={msg}", status_code=303)
+
+
+@router.post("/sequences/{seq_id}/lifecycle")
+def lifecycle_action_route(
+    seq_id: str,
+    action: str = Form(...),
+    db: Session = Depends(get_db),
+):
+    seq = _get_sequence(db, seq_id)
+    handler = _LIFECYCLE_ACTIONS.get(action)
+    if handler is None:
+        raise HTTPException(400, f"Unknown action: {action}")
+    now = datetime.now(timezone.utc)
+    _ok, msg = handler(db, seq, now)
+    return RedirectResponse(f"/tasks?msg={msg}", status_code=303)

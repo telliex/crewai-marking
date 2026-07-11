@@ -8,21 +8,30 @@ first week of a new sending domain, then turn this on.
 from __future__ import annotations
 
 import logging
+from datetime import datetime, timezone
 
 from apscheduler.schedulers.blocking import BlockingScheduler
 
 from awkns_outreach.db.session import session_scope
 from awkns_outreach.gmail.replies import poll_all_mailboxes
 from awkns_outreach.runner import run_all_campaigns
+from awkns_outreach.sequencer import lifecycle
 
 log = logging.getLogger("awkns_outreach.scheduler")
 
 
 def tick(*, send: bool, max_per_tick: int) -> None:
+    now = datetime.now(timezone.utc)
     with session_scope() as session:
+        started = lifecycle.start_due_sequences(session, now)
         results = run_all_campaigns(
-            session, dry_run=not send, max_this_run=max_per_tick, gap_ms=0
+            session, dry_run=not send, max_this_run=max_per_tick, gap_ms=0, now=now
         )
+        completed = lifecycle.complete_finished_sequences(session, now)
+    for seq in started:
+        log.info("[sequences] started: %s", seq.name)
+    for seq in completed:
+        log.info("[sequences] completed: %s", seq.name)
     for campaign, s in results:
         if s.blocked:
             log.warning("[%s] blocked: %s", campaign.name, s.blocked)

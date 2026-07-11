@@ -69,6 +69,10 @@ def process_campaign(
     sequence = campaign.sequence or []
     summary = RunSummary(dry_run=dry_run)
 
+    if not sequence:
+        summary.blocked = "no sequence"
+        return summary
+
     if not dry_run:
         # A paused/archived campaign must not send for real even if the run
         # endpoint (or cron) fires. Dry-run previews stay allowed for any status.

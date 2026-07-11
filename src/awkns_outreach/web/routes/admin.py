@@ -14,7 +14,7 @@ from sqlalchemy.orm import Session
 from awkns_outreach.apollo.client import domain_from_website
 from awkns_outreach.apollo.enrich import enrich_campaign
 from awkns_outreach.apollo.seed import SEED_FIELDS, parse_seed_companies
-from awkns_outreach.db.models import Campaign, EmailTemplate, Lead, Mailbox, Suppression
+from awkns_outreach.db.models import Campaign, EmailTemplate, Lead, MailSequence, Mailbox, Suppression
 from awkns_outreach.sequencer import process_campaign
 from awkns_outreach.web.deps import get_db, require_admin, templates
 from awkns_outreach.web.stats import campaign_stats
@@ -31,6 +31,15 @@ _STATUS_TRANSITIONS = {
     "unarchive": {"archived": "active"},
     "pause": {"active": "paused"},
     "resume": {"paused": "active"},
+}
+# Mirror a campaign-status change onto its own running/paused MailSequence
+# (if any) so the two status fields don't silently drift when an operator
+# uses the dashboard's own pause/resume/archive buttons instead of the Tasks
+# page: action -> (sequence statuses to match on, new sequence status).
+_SEQUENCE_MIRROR = {
+    "pause": (("running",), "paused"),
+    "resume": (("paused",), "running"),
+    "archive": (("running", "paused"), "stopped"),
 }
 
 # Placeholders the mailer fills per lead (send/mailer.py `_context`). Shown as a
@@ -156,6 +165,16 @@ def change_campaign_status(
         msg = f"Campaign “{c.name}” is already {c.status}."
     else:
         c.status = new_status
+        mirror = _SEQUENCE_MIRROR.get(action)
+        if mirror:
+            from_statuses, to_status = mirror
+            seq = db.scalar(
+                select(MailSequence).where(
+                    MailSequence.campaign_id == c.id, MailSequence.status.in_(from_statuses),
+                )
+            )
+            if seq is not None:
+                seq.status = to_status
         db.commit()
         msg = f"Campaign “{c.name}” {action}d."
     return RedirectResponse(f"/?status={status}&page={page}&msg={msg}", status_code=303)

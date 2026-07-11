@@ -10,7 +10,7 @@ from sqlalchemy.pool import StaticPool
 
 from awkns_outreach.compliance import make_unsub_token
 from awkns_outreach.config import settings
-from awkns_outreach.db.models import Campaign, Event, Lead, Suppression
+from awkns_outreach.db.models import Campaign, Event, Lead, MailSequence, Suppression
 from awkns_outreach.db.session import Base, get_db
 from awkns_outreach.web.app import app
 from awkns_outreach.web.stats import campaign_stats
@@ -247,6 +247,61 @@ def test_status_pause_resume_invalid_action_and_noop(client, session, monkeypatc
     assert r4.status_code == 303
     session.refresh(c)
     assert c.status == "active"
+
+
+def test_campaign_status_change_mirrors_onto_mail_sequence(client, session, monkeypatch):
+    """The dashboard's own pause/resume/archive buttons must not leave a
+    campaign's running/paused MailSequence status silently out of sync with
+    the Tasks page's lifecycle state."""
+    monkeypatch.setattr(settings, "admin_password", "secret")
+    auth = ("admin", "secret")
+    c = Campaign(name="Mirrors", target_titles=[], seed_companies=[], status="active")
+    session.add(c)
+    session.commit()
+    seq = MailSequence(name="Live seq", campaign_id=c.id, status="running", steps=[])
+    session.add(seq)
+    session.commit()
+
+    r = client.post(f"/campaigns/{c.id}/status", auth=auth, follow_redirects=False,
+                    data={"action": "pause", "status": "default", "page": "1"})
+    assert r.status_code == 303
+    session.refresh(c)
+    session.refresh(seq)
+    assert c.status == "paused" and seq.status == "paused"
+
+    r2 = client.post(f"/campaigns/{c.id}/status", auth=auth, follow_redirects=False,
+                     data={"action": "resume", "status": "default", "page": "1"})
+    assert r2.status_code == 303
+    session.refresh(c)
+    session.refresh(seq)
+    assert c.status == "active" and seq.status == "running"
+
+    r3 = client.post(f"/campaigns/{c.id}/status", auth=auth, follow_redirects=False,
+                     data={"action": "archive", "status": "default", "page": "1"})
+    assert r3.status_code == 303
+    session.refresh(c)
+    session.refresh(seq)
+    assert c.status == "archived" and seq.status == "stopped"
+
+
+def test_campaign_status_change_unarchive_does_not_touch_mail_sequence(client, session, monkeypatch):
+    """unarchive needs no sequence mirroring — a stopped sequence stays
+    stopped even if its campaign is unarchived back to active."""
+    monkeypatch.setattr(settings, "admin_password", "secret")
+    auth = ("admin", "secret")
+    c = Campaign(name="Unarchive me", target_titles=[], seed_companies=[], status="archived")
+    session.add(c)
+    session.commit()
+    seq = MailSequence(name="Done seq", campaign_id=c.id, status="stopped", steps=[])
+    session.add(seq)
+    session.commit()
+
+    r = client.post(f"/campaigns/{c.id}/status", auth=auth, follow_redirects=False,
+                    data={"action": "unarchive", "status": "archived", "page": "1"})
+    assert r.status_code == 303
+    session.refresh(c)
+    session.refresh(seq)
+    assert c.status == "active" and seq.status == "stopped"
 
 
 def test_edit_campaign_get_and_post_saves_fields(client, session, monkeypatch):

@@ -200,6 +200,27 @@ def test_process_campaign_blocked_when_paused_or_archived(db_session, monkeypatc
     assert s3.sent == 1
 
 
+def test_empty_sequence_blocked_and_does_not_complete_leads(db_session):
+    """Regression guard: a brand-new Group has campaign.sequence == [] and its
+    leads start at step=0, so `lead.step >= len(sequence)` (0 >= 0) would be
+    true immediately — process_campaign must short-circuit BEFORE that check,
+    for both dry-run and real-send, so a fresh Group's leads never get
+    silently marked completed before any sequence has actually run."""
+    c = _campaign(db_session)
+    c.sequence = []
+    lead = _lead(db_session, c)
+
+    s = engine.process_campaign(db_session, c, dry_run=True, now=NOW, ignore_hours=True)
+    assert s.blocked == "no sequence"
+    db_session.refresh(lead)
+    assert lead.status == "active"
+
+    s2 = engine.process_campaign(db_session, c, dry_run=False, now=NOW, ignore_hours=True, gap_ms=0)
+    assert s2.blocked == "no sequence"
+    db_session.refresh(lead)
+    assert lead.status == "active"
+
+
 def test_cas_claim_is_single_winner(db_session):
     """The compare-and-swap that prevents double-sends: only the first UPDATE
     active→sending at (id, step) wins; a second sees rowcount 0."""
