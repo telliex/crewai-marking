@@ -211,6 +211,26 @@ def test_lifecycle_pause_resume_stop(client, session):
     assert seq.status == "stopped" and c.status == "paused"
 
 
+def test_tasks_page_shows_drift_warning_when_running_but_campaign_not_active(client, session):
+    """Regression for Minor #5 (plan Phase 4 drift warning, dropped and now
+    restored): a sequence stuck 'running' while its campaign is no longer
+    'active' (manual dashboard drift) should surface a visible warning."""
+    c = _make_campaign(session, name="Drifted Co", status="paused")
+    _make_sequence(session, c, name="Drifted seq", status="running")
+    r = client.get("/tasks", auth=AUTH)
+    assert r.status_code == 200
+    assert "drift" in r.text.lower()
+    assert "paused" in r.text.lower()
+
+
+def test_tasks_page_no_drift_warning_when_running_and_campaign_active(client, session):
+    c = _make_campaign(session, name="Healthy Co", status="active")
+    _make_sequence(session, c, name="Healthy seq", status="running")
+    r = client.get("/tasks", auth=AUTH)
+    assert r.status_code == 200
+    assert "drift" not in r.text.lower()
+
+
 def test_lifecycle_unknown_action_returns_400(client, session):
     c = _make_campaign(session)
     seq = _make_sequence(session, c, status="draft")

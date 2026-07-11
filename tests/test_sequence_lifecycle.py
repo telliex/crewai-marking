@@ -106,6 +106,14 @@ def test_schedule_sequence_rejects_on_conflict(db_session):
     assert msg == "Other seq is already scheduled for this group."
 
 
+def test_schedule_sequence_rejects_empty_draft(db_session):
+    c = _campaign(db_session)
+    seq = _sequence(db_session, c, status="draft", steps=[])
+    ok, msg = lifecycle.schedule_sequence(db_session, seq, NOW)
+    assert not ok and msg == "Sequence has no steps."
+    assert seq.status == "draft" and seq.scheduled_start_at is None
+
+
 def test_unschedule_sequence_happy_path(db_session):
     c = _campaign(db_session)
     seq = _sequence(db_session, c, status="scheduled", scheduled_start_at=NOW)
@@ -239,16 +247,47 @@ def test_resume_sequence_rejects_on_conflict(db_session):
 def test_stop_sequence_from_running(db_session):
     c = _campaign(db_session, status="active")
     seq = _sequence(db_session, c, status="running")
+    c.sequence = list(STEPS)
     ok, msg = lifecycle.stop_sequence(db_session, seq)
     assert ok and msg == "Sequence stopped."
     assert seq.status == "stopped" and c.status == "paused"
+    # Snapshot cleared so a later dashboard resume can't resurrect the stopped
+    # send (engine.py's empty-sequence guard makes it a no-op instead).
+    assert c.sequence == []
 
 
 def test_stop_sequence_from_paused(db_session):
     c = _campaign(db_session, status="paused")
     seq = _sequence(db_session, c, status="paused")
+    c.sequence = list(STEPS)
     ok, msg = lifecycle.stop_sequence(db_session, seq)
     assert ok and seq.status == "stopped" and c.status == "paused"
+    assert c.sequence == []
+
+
+def test_stop_then_dashboard_resume_does_not_resend(db_session, monkeypatch):
+    """Regression for Important #2: stopping a sequence and then resuming its
+    Campaign from the dashboard (flipping campaign.status back to "active"
+    with no new MailSequence started) must NOT resurrect the stopped send."""
+    _mock_ok(monkeypatch)
+    c = _campaign(db_session, status="active")
+    seq = _sequence(db_session, c, status="running")
+    _lead(db_session, c, email="k@toyota.co.jp")
+    c.sequence = list(STEPS)
+
+    ok, _ = lifecycle.stop_sequence(db_session, seq)
+    assert ok
+    assert c.sequence == []
+
+    # Simulate the dashboard's Campaign "resume" action: only campaign.status
+    # flips, no MailSequence is re-activated (a "stopped" sequence isn't
+    # matched by admin.py's _SEQUENCE_MIRROR resume rule).
+    c.status = "active"
+    db_session.commit()
+
+    summary = engine.process_campaign(db_session, c, dry_run=False, now=NOW, ignore_hours=True, gap_ms=0)
+    assert summary.blocked == "no sequence"
+    assert summary.sent == 0
 
 
 def test_stop_sequence_rejects_wrong_status(db_session):

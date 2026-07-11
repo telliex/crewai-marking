@@ -247,6 +247,18 @@ def update_sequence(
     if not db.get(Campaign, campaign_id):
         return RedirectResponse(f"/sequences/{seq.id}/edit?msg=Select a valid group.", status_code=303)
 
+    # A `scheduled` sequence already occupies its current Group's one-active
+    # slot — reassigning it to a different Group that already has an active
+    # sequence would silently violate that invariant (see final-review fix
+    # brief, Important #1). Re-check whenever the Group is actually changing.
+    if campaign_id != seq.campaign_id:
+        conflict = lifecycle.active_conflict(db, campaign_id, exclude_id=seq.id)
+        if conflict is not None:
+            return RedirectResponse(
+                f"/sequences/{seq.id}/edit?msg={conflict.name} is already {conflict.status} for this group.",
+                status_code=303,
+            )
+
     seq.name = name
     seq.campaign_id = campaign_id
     seq.steps = _build_steps(step_key, delay_days, subject, body, attachments, source_template_id)

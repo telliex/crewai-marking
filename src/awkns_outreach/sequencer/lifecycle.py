@@ -46,6 +46,8 @@ def schedule_sequence(db: Session, seq: MailSequence, when: datetime) -> tuple[b
     conflict = active_conflict(db, seq.campaign_id, exclude_id=seq.id)
     if conflict is not None:
         return False, f"{conflict.name} is already {conflict.status} for this group."
+    if not seq.steps:
+        return False, "Sequence has no steps."
     seq.scheduled_start_at = when
     seq.status = "scheduled"
     db.commit()
@@ -118,6 +120,11 @@ def stop_sequence(db: Session, seq: MailSequence) -> tuple[bool, str]:
         return False, "Sequence can't be stopped from its current status."
     seq.campaign.status = "paused"
     seq.status = "stopped"
+    # Clear the stopped snapshot so a later dashboard resume of this Campaign
+    # (which only re-activates a `paused` MailSequence, not a `stopped` one)
+    # can't resurrect the send: engine.py's empty-sequence guard makes
+    # process_campaign no-op instead of resending stale content.
+    seq.campaign.sequence = []
     db.commit()
     return True, "Sequence stopped."
 

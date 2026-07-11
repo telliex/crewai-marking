@@ -291,6 +291,75 @@ def test_save_edit_updates_name_group_and_steps(client, session):
     assert seq.steps[0]["delay_days"] == 0  # first step forced to 0 even on edit
 
 
+def test_save_edit_rejects_group_reassignment_when_target_group_has_active_sequence(client, session):
+    """Regression for Important #1: a scheduled sequence already occupies its
+    current Group's one-active-sequence slot — reassigning it to a Group that
+    already has an active sequence must be rejected, not silently applied."""
+    c1 = _make_campaign(session, name="Group A")
+    c2 = _make_campaign(session, name="Group B")
+    seq = MailSequence(
+        name="Scheduled seq", campaign_id=c1.id, status="scheduled",
+        steps=[{"key": "intro", "delay_days": 0, "subject": "s", "body": "b",
+                "attachments": [], "source_template_id": None}],
+    )
+    other = MailSequence(name="Already running", campaign_id=c2.id, status="running", steps=[])
+    session.add_all([seq, other])
+    session.commit()
+
+    r = client.post(f"/sequences/{seq.id}/edit", auth=AUTH, follow_redirects=False, data={
+        "action": "save", "name": "Scheduled seq", "campaign_id": c2.id,
+        "step_key": ["intro"], "delay_days": ["0"], "subject": ["s"], "body": ["b"],
+        "attachments": ["[]"], "source_template_id": [""],
+    })
+    assert r.status_code == 303
+    assert r.headers["location"] == (
+        f"/sequences/{seq.id}/edit?msg=Already%20running%20is%20already%20running%20for%20this%20group."
+    )
+    session.refresh(seq)
+    assert seq.campaign_id == c1.id  # unchanged — reassignment rejected
+
+
+def test_save_edit_allows_group_reassignment_when_target_group_is_free(client, session):
+    c1 = _make_campaign(session, name="Group A")
+    c2 = _make_campaign(session, name="Group B")
+    seq = MailSequence(name="Scheduled seq", campaign_id=c1.id, status="scheduled", steps=[])
+    session.add(seq)
+    session.commit()
+
+    r = client.post(f"/sequences/{seq.id}/edit", auth=AUTH, follow_redirects=False, data={
+        "action": "save", "name": "Scheduled seq", "campaign_id": c2.id,
+        "step_key": [], "delay_days": [], "subject": [], "body": [],
+        "attachments": [], "source_template_id": [],
+    })
+    assert r.status_code == 303
+    assert r.headers["location"] == f"/sequences/{seq.id}/edit?msg=Sequence%20saved."
+    session.refresh(seq)
+    assert seq.campaign_id == c2.id  # applied — target group was free
+
+
+def test_edit_form_disables_group_select_for_scheduled_sequence(client, session):
+    c = _make_campaign(session)
+    seq = MailSequence(name="Scheduled seq", campaign_id=c.id, status="scheduled", steps=[])
+    session.add(seq)
+    session.commit()
+
+    r = client.get(f"/sequences/{seq.id}/edit", auth=AUTH)
+    assert r.status_code == 200
+    assert '<select name="campaign_id" required class="mt-1 w-full border rounded px-2 py-1.5 text-sm"\n              disabled>' in r.text
+    assert f'<input type="hidden" name="campaign_id" value="{c.id}">' in r.text
+
+
+def test_edit_form_leaves_group_select_enabled_for_draft_sequence(client, session):
+    c = _make_campaign(session)
+    seq = MailSequence(name="Draft seq", campaign_id=c.id, status="draft", steps=[])
+    session.add(seq)
+    session.commit()
+
+    r = client.get(f"/sequences/{seq.id}/edit", auth=AUTH)
+    assert r.status_code == 200
+    assert 'name="campaign_id" required class="mt-1 w-full border rounded px-2 py-1.5 text-sm"\n              disabled' not in r.text
+
+
 def test_post_edit_unknown_action_returns_400(client, session):
     c = _make_campaign(session)
     seq = MailSequence(name="Seq", campaign_id=c.id, status="draft", steps=[])
