@@ -1,0 +1,99 @@
+{% macro rich_editor(body, attachments_json, legacy_ids=false, field_prefix='', extra_body_attrs='', extra_attachments_attrs='') %}
+<style>
+  /* Quill's toolbar CSS resets *any* nested <button> (width/height/background),
+     which also catches the plain buttons inside our link-popover dropdown
+     since it lives inside the toolbar. Opt those back out explicitly.
+     Matches both the legacy #quill-toolbar id (used while legacy_ids=true
+     pages exist, e.g. template_edit.html) and the class-based hook used by
+     every multi-instance-safe editor. */
+  #quill-toolbar .tw-popover-btn,
+  .tw-quill-toolbar .tw-popover-btn {
+    width: auto !important;
+    height: auto !important;
+    padding: 6px 12px !important;
+  }
+  #quill-toolbar .tw-popover-btn.tw-btn-secondary,
+  .tw-quill-toolbar .tw-popover-btn.tw-btn-secondary {
+    background: #fff !important;
+    border: 1px solid #cbd5e1 !important;
+  }
+  #quill-toolbar .tw-popover-btn.tw-btn-primary,
+  .tw-quill-toolbar .tw-popover-btn.tw-btn-primary {
+    background: #0f172a !important;
+    color: #fff !important;
+    border: none !important;
+  }
+</style>
+<div class="tw-editor border rounded overflow-visible">
+  <div class="tw-quill-toolbar flex flex-wrap items-center gap-1 border-b px-2 py-1.5 relative bg-slate-50"{% if legacy_ids %} id="quill-toolbar"{% endif %}>
+    <span class="ql-formats">
+      <button class="ql-bold" title="Bold"></button>
+      <button class="ql-italic" title="Italic"></button>
+      <button class="ql-underline" title="Underline"></button>
+    </span>
+    <span class="ql-formats">
+      <button class="ql-list" value="bullet" title="Bullet list"></button>
+      <button class="ql-list" value="ordered" title="Numbered list"></button>
+      <button class="ql-indent" value="-1" title="Decrease indent"></button>
+      <button class="ql-indent" value="+1" title="Increase indent"></button>
+    </span>
+    <span class="ql-formats">
+      <button class="ql-blockquote" title="Quote"></button>
+    </span>
+    <span class="ql-formats">
+      <button type="button" onclick="twToggleFormatHelp(this)" title="Formatting help">
+        <svg viewbox="0 0 18 18">
+          <circle class="ql-stroke" cx="9" cy="9" r="7"></circle>
+          <text class="ql-fill" x="9" y="12.5" text-anchor="middle" font-size="9" font-weight="700">?</text>
+        </svg>
+      </button>
+      <button type="button" onclick="twOpenLinkPopover(this)" title="Insert link">
+        <svg viewbox="0 0 18 18">
+          <line class="ql-stroke" x1="7" x2="11" y1="7" y2="11"></line>
+          <path class="ql-even ql-stroke" d="M8.9,4.577a3.476,3.476,0,0,1,.36,4.679A3.476,3.476,0,0,1,4.577,8.9C3.185,7.5,2.035,6.4,4.217,4.217S7.5,3.185,8.9,4.577Z"></path>
+          <path class="ql-even ql-stroke" d="M13.423,9.1a3.476,3.476,0,0,0-4.679-.36,3.476,3.476,0,0,0,.36,4.679c1.392,1.392,2.5,2.542,4.679.36S14.815,10.5,13.423,9.1Z"></path>
+        </svg>
+      </button>
+      <button type="button" onclick="this.closest('.tw-editor').querySelector('.tw-image-input').click()" title="Insert image">
+        <svg viewbox="0 0 18 18">
+          <rect class="ql-stroke" height="10" width="12" x="3" y="4"></rect>
+          <circle class="ql-fill" cx="6" cy="7" r="1"></circle>
+          <polyline class="ql-even ql-fill" points="5 12 5 11 7 9 8 10 11 7 13 9 13 12 5 12"></polyline>
+        </svg>
+      </button>
+      <input type="file" class="tw-image-input hidden" accept="image/*" onchange="twImagePicked(this)"{% if legacy_ids %} id="tw-image-input"{% endif %}>
+      <button type="button" onclick="this.closest('.tw-editor').querySelector('.tw-attachment-input').click()" title="Attach file">
+        <svg viewbox="0 0 24 24">
+          <path class="ql-stroke" d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"></path>
+        </svg>
+      </button>
+      <input type="file" class="tw-attachment-input hidden" onchange="twAttachmentPicked(this)"{% if legacy_ids %} id="tw-attachment-input"{% endif %}>
+      <button type="button" class="tw-codeview-btn" onclick="twToggleCodeView(this)" title="View/edit HTML source"{% if legacy_ids %} id="tw-codeview-btn"{% endif %}>
+        <svg viewbox="0 0 18 18">
+          <text class="ql-fill" x="9" y="12.5" text-anchor="middle" font-size="8" font-weight="700" font-family="monospace">&lt;/&gt;</text>
+        </svg>
+      </button>
+    </span>
+
+    <div class="tw-format-help hidden absolute left-0 top-full mt-1 z-10 w-72 rounded border bg-white shadow p-2 text-xs text-slate-600"{% if legacy_ids %} id="format-help"{% endif %}>
+      Bold, italic, underline, lists, quote, links, images, and file attachments — colors and fonts aren't sent; a blank line starts a new paragraph.
+    </div>
+
+    <div class="tw-link-popover hidden absolute left-8 top-full mt-1 z-10 w-72 rounded border bg-white shadow p-3 space-y-2"{% if legacy_ids %} id="link-popover"{% endif %}>
+      <input class="tw-link-url w-full border rounded px-2 py-1.5 text-xs" placeholder="Paste or type link here"{% if legacy_ids %} id="link-url"{% endif %}>
+      <input class="tw-link-label w-full border rounded px-2 py-1.5 text-xs" placeholder="Display text (optional)"{% if legacy_ids %} id="link-label"{% endif %}>
+      <div class="flex justify-end gap-2 pt-1">
+        <button type="button" onclick="twCloseLinkPopover(this)" class="tw-popover-btn tw-btn-secondary text-xs rounded">Cancel</button>
+        <button type="button" onclick="twInsertLink(this)" class="tw-popover-btn tw-btn-primary text-xs rounded">Insert</button>
+      </div>
+    </div>
+  </div>
+  <div class="tw-quill-editor text-sm"{% if legacy_ids %} id="quill-editor"{% endif %}></div>
+  <textarea class="tw-quill-source hidden w-full px-3 py-2 text-xs font-mono block focus:outline-none" rows="10" spellcheck="false"{% if legacy_ids %} id="quill-source"{% endif %}></textarea>
+  <textarea class="tw-body-initial hidden"{% if legacy_ids %} id="body-initial"{% endif %}>{{ body }}</textarea>
+  <input type="hidden" name="{{ field_prefix }}body" class="tw-body-field"{% if legacy_ids %} id="body-field"{% endif %} {{ extra_body_attrs | safe }}>
+  <div class="tw-attachment-chips flex flex-wrap gap-1.5 px-2 py-1.5 border-t empty:hidden"{% if legacy_ids %} id="attachment-chips"{% endif %}></div>
+  <textarea class="tw-attachments-initial hidden"{% if legacy_ids %} id="attachments-initial"{% endif %}>{{ attachments_json }}</textarea>
+  <input type="hidden" name="{{ field_prefix }}attachments" class="tw-attachments-field"{% if legacy_ids %} id="attachments-field"{% endif %} value="[]" {{ extra_attachments_attrs | safe }}>
+</div>
+{% endmacro %}
