@@ -111,7 +111,7 @@ def test_create_sequence_sanitizes_quill_html_body(client, session):
 
 
 def test_create_sequence_unknown_campaign_id_errors_without_persisting(client, session):
-    r = client.post("/sequences", auth=AUTH, follow_redirects=False, data={
+    r = client.post("/sequences", auth=AUTH, data={
         "name": "Orphan",
         "campaign_id": "does-not-exist",
         "step_key": ["intro"],
@@ -121,21 +121,23 @@ def test_create_sequence_unknown_campaign_id_errors_without_persisting(client, s
         "attachments": ["[]"],
         "source_template_id": [""],
     })
-    assert r.status_code == 303
-    assert "msg=" in r.headers["location"]
+    assert r.status_code == 200  # redirect followed back to the form
+    assert r.request.url.path == "/sequences/new"
+    assert "Select a valid group." in r.text  # error actually rendered
     assert session.query(MailSequence).count() == 0
 
 
 def test_create_sequence_missing_name_errors_without_persisting(client, session):
     c = _make_campaign(session)
-    r = client.post("/sequences", auth=AUTH, follow_redirects=False, data={
+    r = client.post("/sequences", auth=AUTH, data={
         "name": "  ",
         "campaign_id": c.id,
         "step_key": [], "delay_days": [], "subject": [], "body": [],
         "attachments": [], "source_template_id": [],
     })
-    assert r.status_code == 303
-    assert "msg=" in r.headers["location"]
+    assert r.status_code == 200  # redirect followed back to the form
+    assert r.request.url.path == "/sequences/new"
+    assert "Name is required." in r.text  # error actually rendered
     assert session.query(MailSequence).count() == 0
 
 

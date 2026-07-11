@@ -114,12 +114,12 @@ def list_sequences(
 
 
 @router.get("/sequences/new", response_class=HTMLResponse)
-def new_sequence_form(request: Request, db: Session = Depends(get_db)):
+def new_sequence_form(request: Request, db: Session = Depends(get_db), msg: Optional[str] = None):
     return templates.TemplateResponse(
         request, "mail_sequence_edit.html",
         {
             "seq": None, "groups": _campaign_groups(db), "template_options": _template_options(db),
-            "placeholders": SEQUENCE_PLACEHOLDERS, "form_action": "/sequences", "msg": None,
+            "placeholders": SEQUENCE_PLACEHOLDERS, "form_action": "/sequences", "msg": msg,
         },
     )
 
