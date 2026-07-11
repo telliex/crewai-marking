@@ -3,7 +3,7 @@ import httpx
 import respx
 
 from awkns_outreach.db.models import Campaign, Lead
-from awkns_outreach.send.mailer import render_step, send_outreach_email
+from awkns_outreach.send.mailer import render_step, render_template_preview, send_outreach_email
 
 _SEQUENCE = [
     {"key": "intro", "delay_days": 0,
@@ -50,6 +50,23 @@ def test_angle_prefers_ai_example():
 def test_first_name_fallback():
     r = render_step(_lead(contact_name=None), _campaign(), 0, "k@toyota.co.jp")
     assert "Hi there," in r.text
+
+
+def test_preview_shows_unrecognized_placeholder_literally():
+    r = render_template_preview(
+        "hi {company_name}", "Hi {first_name}, re {service}. Best, {your_name}", "jamie@x.com",
+    )
+    assert "{company_name}" in r.subject
+    assert "{service}" in r.text and "{your_name}" in r.text
+    assert "Hi Jamie," in r.text  # recognized placeholders still substitute
+
+
+def test_real_send_blanks_unrecognized_placeholder_not_literal():
+    campaign = _campaign()
+    campaign.sequence = [{"key": "intro", "delay_days": 0, "subject": "s", "body": "re {service}."}]
+    r = render_step(_lead(), campaign, 0, "k@toyota.co.jp")
+    assert "{service}" not in r.text
+    assert "re ." in r.text
 
 
 def test_dry_run_sends_nothing():

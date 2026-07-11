@@ -41,6 +41,16 @@ class _SafeDict(dict):
         return ""
 
 
+class _PreviewSafeDict(_SafeDict):
+    """Preview-only variant: an unrecognized {placeholder} stays visible as
+    literal text (Apollo-style) instead of silently going blank, so an
+    operator writing a template notices a typo'd or unsupported field name
+    before it ships in a real send."""
+
+    def __missing__(self, key: str) -> str:
+        return "{" + key + "}"
+
+
 def _angle_line(lead: Lead) -> str:
     """Prefer an AI-generated company-specific example, then the static angle,
     then a safe generic line."""
@@ -120,8 +130,11 @@ class SendResult:
     error: Optional[str] = None
 
 
-def _render_email(subject_tpl: str, body_tpl: str, lead: Lead, ident: Identity, email: str) -> RenderedEmail:
-    ctx = _context(lead, ident)
+def _render_email(
+    subject_tpl: str, body_tpl: str, lead: Lead, ident: Identity, email: str,
+    ctx_cls: type[_SafeDict] = _SafeDict,
+) -> RenderedEmail:
+    ctx = ctx_cls(_context(lead, ident))
     subject = _render(subject_tpl, ctx)
     body = _render(body_tpl, ctx)
     return RenderedEmail(
@@ -157,9 +170,12 @@ def render_template_preview(
     subject_tpl: str, body_tpl: str, email: str, identity: Optional[Identity] = None,
 ) -> RenderedEmail:
     """Render a standalone EmailTemplate's subject/body against the hard-coded
-    example contact — used by the template library's preview pane."""
+    example contact — used by the template library's preview pane. Unlike a
+    real send, an unrecognized {placeholder} stays visible as literal text
+    (see _PreviewSafeDict) so a typo or unsupported field name is obvious
+    before the template is used for a real send."""
     ident = identity or resolve_identity()
-    return _render_email(subject_tpl, body_tpl, _EXAMPLE_LEAD, ident, email)
+    return _render_email(subject_tpl, body_tpl, _EXAMPLE_LEAD, ident, email, ctx_cls=_PreviewSafeDict)
 
 
 def _apply_mailbox_identity(ident: Identity, mailbox: Mailbox, campaign: Campaign) -> None:
