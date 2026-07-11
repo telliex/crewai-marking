@@ -14,6 +14,7 @@ from awkns_outreach.config import settings
 from awkns_outreach.db.models import EmailTemplate, Mailbox
 from awkns_outreach.db.session import Base, get_db
 from awkns_outreach.web.app import app
+from awkns_outreach.web.routes import templates_lib as templates_lib_module
 
 AUTH = ("admin", "secret")
 
@@ -140,6 +141,66 @@ def test_test_send_fragment_uses_gmail_mailbox_recipient(client, session):
     assert f'value="{mb.id}" selected' in r.text  # selection preserved after swap
 
 
+@respx.mock
+def test_test_send_fragment_custom_recipients_sends_individually_via_resend(client, session):
+    route = respx.post("https://api.resend.com/emails").mock(
+        return_value=httpx.Response(200, json={"id": "resend-1"})
+    )
+    r = client.post("/templates/test-send-fragment", auth=AUTH, data={
+        "subject": "s", "body": "b", "mailbox_id": "__custom__",
+        "custom_recipients": "a@example.com, b@example.com",
+    })
+    assert r.status_code == 200
+    assert route.call_count == 2
+    assert "a@example.com: sent" in r.text
+    assert "b@example.com: sent" in r.text
+    assert 'value="a@example.com, b@example.com"' in r.text  # input value preserved
+
+
+@respx.mock
+def test_test_send_fragment_custom_recipients_skips_invalid_format(client, session):
+    route = respx.post("https://api.resend.com/emails").mock(
+        return_value=httpx.Response(200, json={"id": "resend-1"})
+    )
+    r = client.post("/templates/test-send-fragment", auth=AUTH, data={
+        "subject": "s", "body": "b", "mailbox_id": "__custom__",
+        "custom_recipients": "a@example.com, not-an-email",
+    })
+    assert r.status_code == 200
+    assert route.call_count == 1  # only the valid address was sent
+    assert "a@example.com: sent" in r.text
+    assert "not-an-email: skipped — invalid email format" in r.text
+
+
+def test_test_send_fragment_custom_recipients_empty_requires_input(client, session):
+    r = client.post("/templates/test-send-fragment", auth=AUTH, data={
+        "subject": "s", "body": "b", "mailbox_id": "__custom__", "custom_recipients": "  ,  ",
+    })
+    assert r.status_code == 200
+    assert "Enter at least one email address." in r.text
+
+
+@respx.mock
+def test_test_send_fragment_custom_recipients_reports_failure(client, session):
+    respx.post("https://api.resend.com/emails").mock(
+        return_value=httpx.Response(422, json={"message": "domain not verified"})
+    )
+    r = client.post("/templates/test-send-fragment", auth=AUTH, data={
+        "subject": "s", "body": "b", "mailbox_id": "__custom__",
+        "custom_recipients": "a@example.com",
+    })
+    assert r.status_code == 200
+    assert "a@example.com: failed" in r.text
+    assert "domain not verified" in r.text
+
+
+def test_new_template_page_includes_custom_recipients_option(client, session):
+    r = client.get("/templates/new", auth=AUTH)
+    assert r.status_code == 200
+    assert "Custom recipients" in r.text
+    assert 'id="custom-recipients-field"' in r.text
+
+
 def test_new_template_page_returns_ok_with_connected_mailboxes(client, session):
     mb = Mailbox(
         email="steven@gmail.com", access_token="at", refresh_token="rt",
@@ -168,6 +229,139 @@ def test_new_template_page_is_two_column_with_preview_and_toolbar(client, sessio
     assert "twToggleCodeView" in r.text
     # test-send widget present even though nothing is saved yet
     assert "Send Test Email to Me" in r.text
+
+
+def test_upload_image_saves_file_and_returns_absolute_url(client, tmp_path, monkeypatch):
+    monkeypatch.setattr(templates_lib_module, "UPLOAD_DIR", tmp_path)
+    r = client.post("/templates/upload-image", auth=AUTH,
+                     files={"file": ("logo.png", b"fake-png-bytes", "image/png")})
+    assert r.status_code == 200
+    url = r.json()["url"]
+    assert url == f"{settings.app_base_url}/uploads/" + url.rsplit("/", 1)[-1]
+    assert url.endswith(".png")
+    saved = list(tmp_path.iterdir())
+    assert len(saved) == 1
+    assert saved[0].read_bytes() == b"fake-png-bytes"
+
+
+def test_upload_image_rejects_non_image_content_type(client, tmp_path, monkeypatch):
+    monkeypatch.setattr(templates_lib_module, "UPLOAD_DIR", tmp_path)
+    r = client.post("/templates/upload-image", auth=AUTH,
+                     files={"file": ("evil.html", b"<script>alert(1)</script>", "text/html")})
+    assert r.status_code == 400
+    assert list(tmp_path.iterdir()) == []
+
+
+def test_upload_image_rejects_oversized_file(client, tmp_path, monkeypatch):
+    monkeypatch.setattr(templates_lib_module, "UPLOAD_DIR", tmp_path)
+    big = b"x" * (5 * 1024 * 1024 + 1)
+    r = client.post("/templates/upload-image", auth=AUTH,
+                     files={"file": ("big.png", big, "image/png")})
+    assert r.status_code == 400
+    assert list(tmp_path.iterdir()) == []
+
+
+def test_upload_attachment_saves_file_and_returns_metadata(client, tmp_path, monkeypatch):
+    monkeypatch.setattr(templates_lib_module, "UPLOAD_DIR", tmp_path)
+    r = client.post("/templates/upload-attachment", auth=AUTH,
+                     files={"file": ("proposal.pdf", b"%PDF-fake-content", "application/pdf")})
+    assert r.status_code == 200
+    meta = r.json()
+    assert meta["filename"] == "proposal.pdf"
+    assert meta["content_type"] == "application/pdf"
+    assert meta["size"] == len(b"%PDF-fake-content")
+    assert meta["url"] == f"{settings.app_base_url}/uploads/{meta['stored_name']}"
+    saved = tmp_path / meta["stored_name"]
+    assert saved.read_bytes() == b"%PDF-fake-content"
+    assert saved.suffix == ".pdf"
+
+
+def test_upload_attachment_accepts_any_content_type(client, tmp_path, monkeypatch):
+    monkeypatch.setattr(templates_lib_module, "UPLOAD_DIR", tmp_path)
+    r = client.post("/templates/upload-attachment", auth=AUTH,
+                     files={"file": ("data.csv", b"a,b,c", "text/csv")})
+    assert r.status_code == 200
+
+
+def test_upload_attachment_rejects_oversized_file(client, tmp_path, monkeypatch):
+    monkeypatch.setattr(templates_lib_module, "UPLOAD_DIR", tmp_path)
+    big = b"x" * (10 * 1024 * 1024 + 1)
+    r = client.post("/templates/upload-attachment", auth=AUTH,
+                     files={"file": ("big.bin", big, "application/octet-stream")})
+    assert r.status_code == 400
+    assert list(tmp_path.iterdir()) == []
+
+
+def test_create_template_with_attachments_persists_and_shows_in_preview(client, session):
+    attachments = (
+        '[{"filename": "proposal.pdf", "stored_name": "abc123.pdf", '
+        '"content_type": "application/pdf", "size": 1234}, {"bogus": "entry-missing-required-keys"}]'
+    )
+    r = client.post("/templates", auth=AUTH, follow_redirects=False, data={
+        "name": "Intro", "subject": "s", "body": "b", "attachments": attachments,
+    })
+    assert r.status_code == 303
+    t = session.query(EmailTemplate).one()
+    assert t.attachments == [
+        {"filename": "proposal.pdf", "stored_name": "abc123.pdf", "content_type": "application/pdf", "size": 1234},
+    ]  # malformed second entry silently dropped
+
+    edit_page = client.get(f"/templates/{t.id}/edit", auth=AUTH)
+    assert "proposal.pdf" in edit_page.text
+
+
+@respx.mock
+def test_test_send_fragment_includes_attachment_from_disk(client, session, tmp_path, monkeypatch):
+    monkeypatch.setattr(templates_lib_module, "UPLOAD_DIR", tmp_path)
+    import awkns_outreach.send.mailer as mailer_module
+    monkeypatch.setattr(mailer_module, "UPLOAD_DIR", tmp_path)
+    (tmp_path / "abc123.pdf").write_bytes(b"%PDF-fake-content")
+
+    route = respx.post("https://api.resend.com/emails").mock(
+        return_value=httpx.Response(200, json={"id": "resend-1"})
+    )
+    attachments = (
+        '[{"filename": "proposal.pdf", "stored_name": "abc123.pdf", '
+        '"content_type": "application/pdf", "size": 18}]'
+    )
+    r = client.post("/templates/test-send-fragment", auth=AUTH, data={
+        "subject": "s", "body": "b", "mailbox_id": "", "attachments": attachments,
+    })
+    assert r.status_code == 200
+    assert route.called
+    sent_body = route.calls.last.request.content.decode()
+    assert '"filename":"proposal.pdf"' in sent_body.replace(" ", "")
+
+
+def test_new_template_page_loads_quill_rich_text_editor(client, session):
+    r = client.get("/templates/new", auth=AUTH)
+    assert r.status_code == 200
+    assert "quill.min.js" in r.text
+    assert 'id="quill-editor"' in r.text
+    assert 'id="quill-toolbar"' in r.text
+    # curated formats only — no color/font/image formats registered
+    assert "'bold', 'italic', 'underline', 'blockquote', 'list', 'indent', 'link'" in r.text
+
+
+def test_create_template_sanitizes_quill_html_body(client, session):
+    r = client.post("/templates", auth=AUTH, follow_redirects=False, data={
+        "name": "Rich", "subject": "s",
+        "body": '<p onclick="x()">Hi <script>alert(1)</script><strong>{first_name}</strong></p>',
+    })
+    assert r.status_code == 303
+    t = session.query(EmailTemplate).one()
+    assert t.body == "<p>Hi <strong>{first_name}</strong></p>"
+
+
+def test_list_content_column_strips_html_tags_from_rich_body(client, session):
+    t = EmailTemplate(name="Rich", subject="s", body="<p>" + ("word " * 30).strip() + "</p>")
+    session.add(t)
+    session.commit()
+
+    r = client.get("/templates", auth=AUTH)
+    assert r.status_code == 200
+    assert "…" in r.text
+    assert "<p>word" not in r.text
 
 
 def test_edit_template_page_prefills_preview_from_saved_body(client, session):

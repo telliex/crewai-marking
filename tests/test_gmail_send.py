@@ -9,6 +9,7 @@ import httpx
 import respx
 
 from awkns_outreach.db.models import Campaign, Lead, Mailbox
+from awkns_outreach.gmail.mime import build_raw_message
 from awkns_outreach.send.mailer import send_outreach_email
 
 _SEND_URL = "https://gmail.googleapis.com/gmail/v1/users/me/messages/send"
@@ -150,3 +151,55 @@ def test_dry_run_gmail_mailbox_sends_nothing():
     res = send_outreach_email(_lead(), c, "k@toyota.co.jp", 0, dry_run=True)
     assert res.ok and res.id == "dry-run"
     assert len(respx.calls) == 0
+
+
+def test_build_raw_message_attaches_real_file():
+    raw = build_raw_message(
+        from_addr="a@x.com", from_name="A", to_addr="b@x.com", subject="s",
+        text="hi", html="<p>hi</p>", message_id="<m@x.com>",
+        attachments=[{"filename": "notes.txt", "content_type": "text/plain", "data": b"hello world"}],
+    )
+    decoded = base64.urlsafe_b64decode(raw + "=" * (-len(raw) % 4))
+    assert b'filename="notes.txt"' in decoded
+    assert b"aGVsbG8gd29ybGQ=" in decoded  # base64 of "hello world"
+    assert b"multipart/mixed" in decoded
+
+
+@respx.mock
+def test_gmail_send_includes_attachment_from_disk(tmp_path, monkeypatch):
+    import awkns_outreach.send.mailer as mailer_module
+    monkeypatch.setattr(mailer_module, "UPLOAD_DIR", tmp_path)
+    (tmp_path / "abc123.pdf").write_bytes(b"%PDF-fake-content")
+
+    gmail_route = respx.post(_SEND_URL).mock(
+        return_value=httpx.Response(200, json={"id": "gmail-1", "threadId": "thread-1"})
+    )
+    mb = _mailbox()
+    c = _campaign(mb, sequence=[{
+        "key": "intro", "delay_days": 0, "subject": "s", "body": "b",
+        "attachments": [{"filename": "proposal.pdf", "stored_name": "abc123.pdf", "content_type": "application/pdf"}],
+    }])
+    res = send_outreach_email(_lead(), c, "k@toyota.co.jp", 0, dry_run=False)
+    assert res.ok
+    raw = _decode_raw(gmail_route.calls.last.request)
+    assert b'filename="proposal.pdf"' in raw
+    assert base64.b64encode(b"%PDF-fake-content") in raw
+
+
+@respx.mock
+def test_gmail_send_skips_missing_attachment_file(tmp_path, monkeypatch):
+    import awkns_outreach.send.mailer as mailer_module
+    monkeypatch.setattr(mailer_module, "UPLOAD_DIR", tmp_path)  # empty dir — no file written
+
+    gmail_route = respx.post(_SEND_URL).mock(
+        return_value=httpx.Response(200, json={"id": "gmail-1", "threadId": "thread-1"})
+    )
+    mb = _mailbox()
+    c = _campaign(mb, sequence=[{
+        "key": "intro", "delay_days": 0, "subject": "s", "body": "b",
+        "attachments": [{"filename": "gone.pdf", "stored_name": "missing.pdf", "content_type": "application/pdf"}],
+    }])
+    res = send_outreach_email(_lead(), c, "k@toyota.co.jp", 0, dry_run=False)
+    assert res.ok  # send still succeeds, just without the missing attachment
+    raw = _decode_raw(gmail_route.calls.last.request)
+    assert b"gone.pdf" not in raw

@@ -1,5 +1,28 @@
 {% extends "base.html" %}
 {% block title %}{% if t %}Edit {{ t.name }}{% else %}New template{% endif %} — Awkns Outreach{% endblock %}
+{% block head_extra %}
+<link href="https://cdn.quilljs.com/1.3.7/quill.snow.css" rel="stylesheet">
+<script src="https://cdn.quilljs.com/1.3.7/quill.min.js"></script>
+<style>
+  /* Quill's toolbar CSS resets *any* nested <button> (width/height/background),
+     which also catches the plain buttons inside our link-popover dropdown
+     since it lives inside #quill-toolbar. Opt those back out explicitly. */
+  #quill-toolbar .tw-popover-btn {
+    width: auto !important;
+    height: auto !important;
+    padding: 6px 12px !important;
+  }
+  #quill-toolbar .tw-popover-btn.tw-btn-secondary {
+    background: #fff !important;
+    border: 1px solid #cbd5e1 !important;
+  }
+  #quill-toolbar .tw-popover-btn.tw-btn-primary {
+    background: #0f172a !important;
+    color: #fff !important;
+    border: none !important;
+  }
+</style>
+{% endblock %}
 {% block content %}
 <a href="/templates" class="text-xs text-slate-500 hover:underline">&larr; Templates</a>
 <h1 class="text-lg font-semibold mb-4">{% if t %}Edit template{% else %}New template{% endif %}</h1>
@@ -23,42 +46,85 @@
         <input name="subject" id="subject-field" value="{{ t.subject if t else '' }}" class="w-full border rounded px-2 py-1.5"
                placeholder="quick idea for {company}"
                hx-post="/templates/preview-fragment" hx-trigger="input changed delay:500ms"
-               hx-target="#preview-pane" hx-include="#subject-field,#body-field">
+               hx-target="#preview-pane" hx-include="#subject-field,#body-field,#attachments-field">
       </div>
       <div>
         <label class="block text-sm font-medium mb-1">Body</label>
-        <div class="border rounded overflow-hidden">
-          <textarea name="body" id="body-field" rows="10" class="w-full px-2 py-1.5 text-sm block focus:outline-none"
-                    placeholder="Hi {first_name},&#10;&#10;{angle}&#10;&#10;{sender_name}"
-                    hx-post="/templates/preview-fragment" hx-trigger="input changed delay:500ms"
-                    hx-target="#preview-pane" hx-include="#subject-field,#body-field">{{ t.body if t else '' }}</textarea>
-          <div class="flex items-center gap-1 border-t px-2 py-1.5 relative bg-slate-50">
-            <button type="button" onclick="twToggleFormatHelp()" title="Formatting help"
-                    class="w-8 h-8 rounded hover:bg-slate-200 font-serif text-sm">T</button>
-            <button type="button" onclick="twOpenLinkPopover()" title="Insert link"
-                    class="w-8 h-8 rounded hover:bg-slate-200">&#128279;</button>
-            <label class="w-8 h-8 rounded hover:bg-slate-200 flex items-center justify-center cursor-pointer" title="Insert image">
-              &#128247;<input type="file" accept="image/*" class="hidden" onchange="twFilePicked(this, 'image')">
-            </label>
-            <label class="w-8 h-8 rounded hover:bg-slate-200 flex items-center justify-center cursor-pointer" title="Attach file">
-              &#128206;<input type="file" class="hidden" onchange="twFilePicked(this, 'attachment')">
-            </label>
-            <button type="button" onclick="twToggleCodeView()" title="Toggle monospace view"
-                    class="w-8 h-8 rounded hover:bg-slate-200 text-xs font-mono">&lt;&gt;</button>
+        <div class="border rounded overflow-visible">
+          <div id="quill-toolbar" class="flex flex-wrap items-center gap-1 border-b px-2 py-1.5 relative bg-slate-50">
+            <span class="ql-formats">
+              <button class="ql-bold" title="Bold"></button>
+              <button class="ql-italic" title="Italic"></button>
+              <button class="ql-underline" title="Underline"></button>
+            </span>
+            <span class="ql-formats">
+              <button class="ql-list" value="bullet" title="Bullet list"></button>
+              <button class="ql-list" value="ordered" title="Numbered list"></button>
+              <button class="ql-indent" value="-1" title="Decrease indent"></button>
+              <button class="ql-indent" value="+1" title="Increase indent"></button>
+            </span>
+            <span class="ql-formats">
+              <button class="ql-blockquote" title="Quote"></button>
+            </span>
+            <span class="ql-formats">
+              <button type="button" onclick="twToggleFormatHelp()" title="Formatting help">
+                <svg viewbox="0 0 18 18">
+                  <circle class="ql-stroke" cx="9" cy="9" r="7"></circle>
+                  <text class="ql-fill" x="9" y="12.5" text-anchor="middle" font-size="9" font-weight="700">?</text>
+                </svg>
+              </button>
+              <button type="button" onclick="twOpenLinkPopover()" title="Insert link">
+                <svg viewbox="0 0 18 18">
+                  <line class="ql-stroke" x1="7" x2="11" y1="7" y2="11"></line>
+                  <path class="ql-even ql-stroke" d="M8.9,4.577a3.476,3.476,0,0,1,.36,4.679A3.476,3.476,0,0,1,4.577,8.9C3.185,7.5,2.035,6.4,4.217,4.217S7.5,3.185,8.9,4.577Z"></path>
+                  <path class="ql-even ql-stroke" d="M13.423,9.1a3.476,3.476,0,0,0-4.679-.36,3.476,3.476,0,0,0,.36,4.679c1.392,1.392,2.5,2.542,4.679.36S14.815,10.5,13.423,9.1Z"></path>
+                </svg>
+              </button>
+              <button type="button" onclick="document.getElementById('tw-image-input').click()" title="Insert image">
+                <svg viewbox="0 0 18 18">
+                  <rect class="ql-stroke" height="10" width="12" x="3" y="4"></rect>
+                  <circle class="ql-fill" cx="6" cy="7" r="1"></circle>
+                  <polyline class="ql-even ql-fill" points="5 12 5 11 7 9 8 10 11 7 13 9 13 12 5 12"></polyline>
+                </svg>
+              </button>
+              <input type="file" id="tw-image-input" accept="image/*" class="hidden" onchange="twImagePicked(this)">
+              <button type="button" onclick="document.getElementById('tw-attachment-input').click()" title="Attach file">
+                <svg viewbox="0 0 24 24">
+                  <path class="ql-stroke" d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"></path>
+                </svg>
+              </button>
+              <input type="file" id="tw-attachment-input" class="hidden" onchange="twAttachmentPicked(this)">
+              <button type="button" id="tw-codeview-btn" onclick="twToggleCodeView()" title="View/edit HTML source">
+                <svg viewbox="0 0 18 18">
+                  <text class="ql-fill" x="9" y="12.5" text-anchor="middle" font-size="8" font-weight="700" font-family="monospace">&lt;/&gt;</text>
+                </svg>
+              </button>
+            </span>
 
             <div id="format-help" class="hidden absolute left-0 top-full mt-1 z-10 w-72 rounded border bg-white shadow p-2 text-xs text-slate-600">
-              Plain text only — a blank line starts a new paragraph; raw https:// links auto-linkify.
+              Bold, italic, underline, lists, quote, links, images, and file attachments — colors and fonts aren't sent; a blank line starts a new paragraph.
             </div>
 
-            <div id="link-popover" class="hidden absolute left-8 top-full mt-1 z-10 w-64 rounded border bg-white shadow p-2 space-y-1">
-              <input id="link-url" placeholder="Paste or type link here" class="w-full border rounded px-2 py-1 text-xs">
-              <input id="link-label" placeholder="Display text (optional)" class="w-full border rounded px-2 py-1 text-xs">
-              <div class="flex justify-end gap-1">
-                <button type="button" onclick="twCloseLinkPopover()" class="text-xs px-2 py-1">Cancel</button>
-                <button type="button" onclick="twInsertLink()" class="text-xs px-2 py-1 rounded bg-slate-900 text-white">Insert</button>
+            <div id="link-popover" class="hidden absolute left-8 top-full mt-1 z-10 w-72 rounded border bg-white shadow p-3 space-y-2">
+              <input id="link-url" placeholder="Paste or type link here" class="w-full border rounded px-2 py-1.5 text-xs">
+              <input id="link-label" placeholder="Display text (optional)" class="w-full border rounded px-2 py-1.5 text-xs">
+              <div class="flex justify-end gap-2 pt-1">
+                <button type="button" onclick="twCloseLinkPopover()" class="tw-popover-btn tw-btn-secondary text-xs rounded">Cancel</button>
+                <button type="button" onclick="twInsertLink()" class="tw-popover-btn tw-btn-primary text-xs rounded">Insert</button>
               </div>
             </div>
           </div>
+          <div id="quill-editor" class="text-sm"></div>
+          <textarea id="quill-source" class="hidden w-full px-3 py-2 text-xs font-mono block focus:outline-none" rows="10" spellcheck="false"></textarea>
+          <textarea id="body-initial" class="hidden">{{ t.body if t else '' }}</textarea>
+          <input type="hidden" name="body" id="body-field"
+                 hx-post="/templates/preview-fragment" hx-trigger="input changed delay:500ms"
+                 hx-target="#preview-pane" hx-include="#subject-field,#body-field,#attachments-field">
+          <div id="attachment-chips" class="flex flex-wrap gap-1.5 px-2 py-1.5 border-t empty:hidden"></div>
+          <textarea id="attachments-initial" class="hidden">{{ attachments_json }}</textarea>
+          <input type="hidden" name="attachments" id="attachments-field"
+                 hx-post="/templates/preview-fragment" hx-trigger="input changed delay:500ms"
+                 hx-target="#preview-pane" hx-include="#subject-field,#body-field,#attachments-field" value="[]">
         </div>
       </div>
 
@@ -92,13 +158,46 @@
 </div>
 
 <script>
-function twInsertAtCursor(el, text) {
-  const start = el.selectionStart, end = el.selectionEnd;
-  el.value = el.value.slice(0, start) + text + el.value.slice(end);
-  const pos = start + text.length;
-  el.selectionStart = el.selectionEnd = pos;
-  el.focus();
-  el.dispatchEvent(new Event('input', { bubbles: true }));
+const quill = new Quill('#quill-editor', {
+  theme: 'snow',
+  modules: { toolbar: '#quill-toolbar' },
+  formats: ['bold', 'italic', 'underline', 'blockquote', 'list', 'indent', 'link', 'image'],
+  placeholder: 'Hi {first_name},\n\n{angle}\n\n{sender_name}',
+});
+
+function twEscapeHtml(s) {
+  const d = document.createElement('div');
+  d.textContent = s;
+  return d.innerHTML;
+}
+
+(function twLoadInitialBody() {
+  const raw = document.getElementById('body-initial').value;
+  if (!raw) return;
+  if (raw.includes('<')) {
+    quill.clipboard.dangerouslyPasteHTML(raw);
+  } else {
+    // Legacy plain-text template (predates the rich-text editor): preserve
+    // blank-line paragraph breaks the same way the old send pipeline did.
+    const html = raw.split(/\n{2,}/).map(
+      (p) => '<p>' + p.split('\n').map(twEscapeHtml).join('<br>') + '</p>'
+    ).join('');
+    quill.clipboard.dangerouslyPasteHTML(html);
+  }
+})();
+
+const bodyField = document.getElementById('body-field');
+function twSyncBody() {
+  bodyField.value = quill.getText().trim() === '' ? '' : quill.root.innerHTML;
+  bodyField.dispatchEvent(new Event('input', { bubbles: true }));
+}
+quill.on('text-change', twSyncBody);
+twSyncBody();
+
+function twInsertAtCursor(text) {
+  const range = quill.getSelection(true) || { index: quill.getLength(), length: 0 };
+  quill.insertText(range.index, text, 'user');
+  quill.setSelection(range.index + text.length, 0);
 }
 function twToggleFormatHelp() {
   document.getElementById('format-help').classList.toggle('hidden');
@@ -111,22 +210,115 @@ function twCloseLinkPopover() {
 }
 function twInsertLink() {
   const url = document.getElementById('link-url').value.trim();
-  const label = document.getElementById('link-label').value.trim();
+  const label = document.getElementById('link-label').value.trim() || url;
   if (!url) return;
-  const text = label ? (label + ' ' + url) : url;
-  twInsertAtCursor(document.getElementById('body-field'), text);
+  const range = quill.getSelection(true) || { index: quill.getLength(), length: 0 };
+  quill.insertText(range.index, label, 'link', url, 'user');
+  quill.setSelection(range.index + label.length, 0);
   document.getElementById('link-url').value = '';
   document.getElementById('link-label').value = '';
   twCloseLinkPopover();
 }
-function twFilePicked(input, kind) {
-  if (!input.files || !input.files.length) return;
-  const name = input.files[0].name;
-  twInsertAtCursor(document.getElementById('body-field'), '[' + kind + ': ' + name + ']');
-  input.value = '';
+let twAttachments = [];
+function twFormatBytes(n) {
+  if (!n) return '';
+  if (n < 1024) return n + ' B';
+  return n < 1024 * 1024 ? (n / 1024).toFixed(1) + ' KB' : (n / (1024 * 1024)).toFixed(1) + ' MB';
 }
+function twRenderAttachmentChips() {
+  const el = document.getElementById('attachment-chips');
+  el.innerHTML = twAttachments.map((att, i) => `
+    <span class="inline-flex items-center gap-1 rounded border bg-slate-50 px-2 py-1 text-xs text-slate-600">
+      &#128206; ${twEscapeHtml(att.filename)}${att.size ? ' (' + twFormatBytes(att.size) + ')' : ''}
+      <button type="button" onclick="twRemoveAttachment(${i})" class="ml-1 text-slate-400 hover:text-red-600" title="Remove">&times;</button>
+    </span>
+  `).join('');
+}
+function twSyncAttachments() {
+  const field = document.getElementById('attachments-field');
+  field.value = JSON.stringify(twAttachments);
+  field.dispatchEvent(new Event('input', { bubbles: true }));
+  twRenderAttachmentChips();
+}
+function twRemoveAttachment(i) {
+  twAttachments.splice(i, 1);
+  twSyncAttachments();
+}
+(function twLoadInitialAttachments() {
+  const raw = document.getElementById('attachments-initial').value;
+  try {
+    twAttachments = raw ? JSON.parse(raw) : [];
+  } catch (e) {
+    twAttachments = [];
+  }
+  twRenderAttachmentChips();
+})();
+async function twAttachmentPicked(input) {
+  if (!input.files || !input.files.length) return;
+  const file = input.files[0];
+  try {
+    const form = new FormData();
+    form.append('file', file);
+    const res = await fetch('/templates/upload-attachment', { method: 'POST', body: form });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.detail || 'Upload failed');
+    }
+    const meta = await res.json();
+    twAttachments.push(meta);
+    twSyncAttachments();
+  } catch (e) {
+    alert('Attachment upload failed: ' + e.message);
+  } finally {
+    input.value = '';
+  }
+}
+async function twImagePicked(input) {
+  if (!input.files || !input.files.length) return;
+  const file = input.files[0];
+  const range = quill.getSelection(true) || { index: quill.getLength(), length: 0 };
+  try {
+    const form = new FormData();
+    form.append('file', file);
+    const res = await fetch('/templates/upload-image', { method: 'POST', body: form });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.detail || 'Upload failed');
+    }
+    const { url } = await res.json();
+    quill.insertEmbed(range.index, 'image', url, 'user');
+    quill.setSelection(range.index + 1, 0);
+  } catch (e) {
+    alert('Image upload failed: ' + e.message);
+  } finally {
+    input.value = '';
+  }
+}
+let twCodeViewOn = false;
 function twToggleCodeView() {
-  document.getElementById('body-field').classList.toggle('font-mono');
+  const editorEl = document.getElementById('quill-editor');
+  const sourceEl = document.getElementById('quill-source');
+  const btn = document.getElementById('tw-codeview-btn');
+  if (!twCodeViewOn) {
+    sourceEl.value = quill.getText().trim() === '' ? '' : quill.root.innerHTML;
+    editorEl.classList.add('hidden');
+    sourceEl.classList.remove('hidden');
+  } else {
+    quill.setText('');
+    if (sourceEl.value.trim()) {
+      quill.clipboard.dangerouslyPasteHTML(sourceEl.value);
+    }
+    sourceEl.classList.add('hidden');
+    editorEl.classList.remove('hidden');
+    twSyncBody();
+  }
+  twCodeViewOn = !twCodeViewOn;
+  btn.classList.toggle('ql-active', twCodeViewOn);
+}
+function twMailboxFieldChanged(select) {
+  const isCustom = select.value === '__custom__';
+  document.getElementById('custom-recipients-field').classList.toggle('hidden', !isCustom);
+  document.getElementById('test-send-button').textContent = isCustom ? 'Send Test Email' : 'Send Test Email to Me';
 }
 </script>
 {% endblock %}

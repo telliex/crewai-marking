@@ -2,3 +2,13 @@
 <div class="text-sm font-medium mb-4">{{ preview.subject }}</div>
 <div class="text-xs text-slate-500 mb-2">Body (rendered HTML)</div>
 <div class="border rounded p-3">{{ preview.html|safe }}</div>
+{% if preview.attachments %}
+<div class="text-xs text-slate-500 mt-3 mb-1">Attachments</div>
+<div class="flex flex-wrap gap-1">
+  {% for att in preview.attachments %}
+  <span class="inline-flex items-center gap-1 rounded border bg-slate-50 px-2 py-1 text-xs text-slate-600">
+    &#128206; {{ att.filename }}{% if att.size %} ({% if att.size < 1024 %}{{ att.size }} B{% else %}{{ (att.size / 1024) | round(1) }} KB{% endif %}){% endif %}
+  </span>
+  {% endfor %}
+</div>
+{% endif %}

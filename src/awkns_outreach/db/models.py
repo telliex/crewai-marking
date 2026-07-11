@@ -251,6 +251,14 @@ class EmailTemplate(Base):
     body: Mapped[str] = mapped_column(String, nullable=False)
     status: Mapped[str] = mapped_column(String, default="active")  # active | archived
 
+    # Real outgoing-email attachments (as opposed to inline body images):
+    # list of {filename, stored_name, content_type, size}. `stored_name` is
+    # the UUID-based on-disk filename under uploads.UPLOAD_DIR; `filename` is
+    # the original name shown to the recipient.
+    attachments: Mapped[list[dict[str, Any]]] = mapped_column(
+        JSONType, default=list, nullable=False
+    )
+
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )

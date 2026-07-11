@@ -1,14 +1,15 @@
 """Build the raw RFC 822 message the Gmail API's `messages.send` expects.
 
 Stdlib `email.message.EmailMessage` only — no MIME library dependency needed
-for a text+html multipart/alternative message with a few extra headers.
+for a text+html multipart/alternative message (optionally with real file
+attachments) with a few extra headers.
 """
 from __future__ import annotations
 
 import base64
 from email.message import EmailMessage
 from email.utils import make_msgid
-from typing import Optional
+from typing import Optional, TypedDict
 
 
 def new_message_id(domain: str) -> str:
@@ -16,6 +17,12 @@ def new_message_id(domain: str) -> str:
     send), so a later sequence step can set In-Reply-To/References without an
     extra `messages.get` round-trip."""
     return make_msgid(domain=domain)
+
+
+class Attachment(TypedDict):
+    filename: str
+    content_type: str
+    data: bytes
 
 
 def build_raw_message(
@@ -30,6 +37,7 @@ def build_raw_message(
     reply_to: Optional[str] = None,
     in_reply_to: Optional[str] = None,
     extra_headers: Optional[dict[str, str]] = None,
+    attachments: Optional[list[Attachment]] = None,
 ) -> str:
     """Return the message base64url-encoded (the Gmail API `raw` field)."""
     msg = EmailMessage()
@@ -49,5 +57,18 @@ def build_raw_message(
 
     msg.set_content(text)
     msg.add_alternative(html, subtype="html")
+
+    # add_attachment() after set_content()/add_alternative() promotes the
+    # message to multipart/mixed with the text/html alternative nested
+    # inside — the structure every mail client expects for "body + files".
+    for att in attachments or []:
+        maintype, _, subtype = (
+            att["content_type"] or "application/octet-stream"
+        ).partition("/")
+        if not subtype:
+            maintype, subtype = "application", "octet-stream"
+        msg.add_attachment(
+            att["data"], maintype=maintype, subtype=subtype, filename=att["filename"],
+        )
 
     return base64.urlsafe_b64encode(msg.as_bytes()).decode("ascii")

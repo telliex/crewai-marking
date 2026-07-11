@@ -15,20 +15,24 @@ either way and is otherwise untouched.
 """
 from __future__ import annotations
 
+import base64
 import re
-from dataclasses import dataclass
-from html import escape
+from dataclasses import dataclass, field
+from html import escape, unescape
+from html.parser import HTMLParser
 from typing import Any, Optional
 
 import httpx
+import nh3
 
 from awkns_outreach.compliance import footer_html, footer_text, list_unsubscribe_headers
 from awkns_outreach.config import settings
 from awkns_outreach.db.models import Campaign, Lead, Mailbox
 from awkns_outreach.gmail.api import ensure_fresh_token, send_raw
-from awkns_outreach.gmail.mime import build_raw_message, new_message_id
+from awkns_outreach.gmail.mime import Attachment, build_raw_message, new_message_id
 from awkns_outreach.gmail.oauth import NeedsReconnect
 from awkns_outreach.identity import Identity, resolve_identity
+from awkns_outreach.uploads import UPLOAD_DIR
 
 _RESEND_URL = "https://api.resend.com/emails"
 _TIMEOUT = httpx.Timeout(30.0)
@@ -84,6 +88,75 @@ def _render(tpl: str, ctx: _SafeDict) -> str:
         return tpl  # never let a bad template abort a send-render
 
 
+# --- Rich-text template bodies ---------------------------------------------
+#
+# The template library's body field is edited with a Quill rich-text editor
+# (see template_edit.html) whose toolbar only registers a small allowlist of
+# formats (bold/italic/underline/blockquote/lists/link). A body coming out of
+# that editor is real HTML; a body from the older plain-textarea sequence-step
+# editor (web/routes/admin.py) never contains a "<" at all. `_is_rich_html`
+# tells the two apart so both editors keep rendering correctly through the
+# same send pipeline without a data migration for existing plain-text rows.
+
+_RICH_TAGS = {"p", "br", "strong", "em", "u", "blockquote", "ol", "ul", "li", "a", "img"}
+_RICH_ATTRIBUTES = {"a": {"href"}, "img": {"src", "alt"}}
+
+
+def _is_rich_html(body: str) -> bool:
+    return "<" in body
+
+
+def sanitize_rich_body(html: str) -> str:
+    """Allowlist-clean a Quill-authored body before it's stored or rendered,
+    so a stored template can never carry an XSS payload back into the editor
+    (or an outbound email) on redisplay."""
+    return nh3.clean(html, tags=_RICH_TAGS, attributes=_RICH_ATTRIBUTES)
+
+
+class _HtmlToText(HTMLParser):
+    """Converts a sanitize_rich_body()-cleaned fragment (our fixed tag set
+    only) into a readable plain-text alt part. Not a general HTML->text
+    converter — only handles the tags in _RICH_TAGS."""
+
+    _BLOCK_TAGS = {"p", "blockquote", "li"}
+
+    def __init__(self) -> None:
+        super().__init__()
+        self._parts: list[str] = []
+        self._href: Optional[str] = None
+
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, Optional[str]]]) -> None:
+        if tag == "br":
+            self._parts.append("\n")
+        elif tag == "li":
+            self._parts.append("- ")
+        elif tag == "a":
+            self._href = dict(attrs).get("href")
+        elif tag == "img":
+            src = dict(attrs).get("src") or ""
+            self._parts.append(f"[image: {src}]" if src else "[image]")
+
+    def handle_endtag(self, tag: str) -> None:
+        if tag in self._BLOCK_TAGS:
+            self._parts.append("\n\n")
+        elif tag == "a":
+            if self._href:
+                self._parts.append(f" ({self._href})")
+            self._href = None
+
+    def handle_data(self, data: str) -> None:
+        self._parts.append(data)
+
+    def text(self) -> str:
+        return re.sub(r"\n{3,}", "\n\n", "".join(self._parts)).strip()
+
+
+def _html_to_text(html: str) -> str:
+    parser = _HtmlToText()
+    parser.feed(html)
+    return unescape(parser.text())
+
+
 # --- Plain-text → inbox-friendly HTML (no card chrome) ---------------------
 
 def _linkify(escaped: str) -> str:
@@ -120,6 +193,10 @@ class RenderedEmail:
     subject: str
     text: str
     html: str
+    # Metadata only (filename/stored_name/content_type/size) — bytes are read
+    # off disk lazily at actual send time via _resolve_attachments, so a
+    # preview render never has to touch the filesystem.
+    attachments: list[dict] = field(default_factory=list)
 
 
 @dataclass
@@ -132,15 +209,22 @@ class SendResult:
 
 def _render_email(
     subject_tpl: str, body_tpl: str, lead: Lead, ident: Identity, email: str,
-    ctx_cls: type[_SafeDict] = _SafeDict,
+    ctx_cls: type[_SafeDict] = _SafeDict, attachments: Optional[list[dict]] = None,
 ) -> RenderedEmail:
     ctx = ctx_cls(_context(lead, ident))
     subject = _render(subject_tpl, ctx)
     body = _render(body_tpl, ctx)
+    if _is_rich_html(body):
+        body_html = sanitize_rich_body(body)
+        body_text = _html_to_text(body_html)
+    else:
+        body_html = _text_to_html(body)
+        body_text = body
     return RenderedEmail(
         subject=subject,
-        text=body + "\n" + footer_text(email, ident),
-        html=_wrap_html(_text_to_html(body) + footer_html(email, ident)),
+        text=body_text + "\n" + footer_text(email, ident),
+        html=_wrap_html(body_html + footer_html(email, ident)),
+        attachments=attachments or [],
     )
 
 
@@ -153,7 +237,10 @@ def render_step(
     if step_index >= len(steps):
         raise IndexError(f"No sequence step at index {step_index}")
     step = steps[step_index]
-    return _render_email(step.get("subject", ""), step.get("body", ""), lead, ident, email)
+    return _render_email(
+        step.get("subject", ""), step.get("body", ""), lead, ident, email,
+        attachments=step.get("attachments"),
+    )
 
 
 # Hard-coded example contact for the standalone template library's preview
@@ -168,6 +255,7 @@ _EXAMPLE_LEAD = Lead(
 
 def render_template_preview(
     subject_tpl: str, body_tpl: str, email: str, identity: Optional[Identity] = None,
+    attachments: Optional[list[dict]] = None,
 ) -> RenderedEmail:
     """Render a standalone EmailTemplate's subject/body against the hard-coded
     example contact — used by the template library's preview pane. Unlike a
@@ -175,7 +263,31 @@ def render_template_preview(
     (see _PreviewSafeDict) so a typo or unsupported field name is obvious
     before the template is used for a real send."""
     ident = identity or resolve_identity()
-    return _render_email(subject_tpl, body_tpl, _EXAMPLE_LEAD, ident, email, ctx_cls=_PreviewSafeDict)
+    return _render_email(
+        subject_tpl, body_tpl, _EXAMPLE_LEAD, ident, email,
+        ctx_cls=_PreviewSafeDict, attachments=attachments,
+    )
+
+
+def _resolve_attachments(attachments: list[dict]) -> list[Attachment]:
+    """Read attachment bytes off local disk at actual send time. A missing
+    file (e.g. deleted from under an old template) is skipped rather than
+    failing the whole send — better to deliver the email without it."""
+    resolved: list[Attachment] = []
+    for att in attachments:
+        stored_name = att.get("stored_name")
+        if not stored_name:
+            continue
+        try:
+            data = (UPLOAD_DIR / stored_name).read_bytes()
+        except OSError:
+            continue
+        resolved.append(Attachment(
+            filename=att.get("filename") or stored_name,
+            content_type=att.get("content_type") or "application/octet-stream",
+            data=data,
+        ))
+    return resolved
 
 
 def _apply_mailbox_identity(ident: Identity, mailbox: Mailbox, campaign: Campaign) -> None:
@@ -223,6 +335,7 @@ def _send_via_gmail(
             subject=rendered.subject, text=rendered.text, html=rendered.html,
             message_id=message_id, reply_to=ident.reply_to, in_reply_to=in_reply_to,
             extra_headers=list_unsubscribe_headers(email, ident),
+            attachments=_resolve_attachments(rendered.attachments),
         )
         data = send_raw(access_token, raw, thread_id=thread_id)
     except Exception as e:
@@ -258,19 +371,27 @@ def send_outreach_email(
         _apply_mailbox_identity(ident, mailbox, campaign)
         return _send_via_gmail(lead, campaign, mailbox, email, step_index, rendered, ident)
 
+    payload = {
+        "from": f"{ident.from_name} <{ident.from_email}>",
+        "to": email,
+        "reply_to": ident.reply_to,
+        "subject": rendered.subject,
+        "text": rendered.text,
+        "html": rendered.html,
+        "headers": list_unsubscribe_headers(email, ident),
+    }
+    resolved_attachments = _resolve_attachments(rendered.attachments)
+    if resolved_attachments:
+        payload["attachments"] = [
+            {"filename": att["filename"], "content": base64.b64encode(att["data"]).decode("ascii")}
+            for att in resolved_attachments
+        ]
+
     try:
         resp = httpx.post(
             _RESEND_URL,
             headers={"Authorization": f"Bearer {settings.resend_api_key}"},
-            json={
-                "from": f"{ident.from_name} <{ident.from_email}>",
-                "to": email,
-                "reply_to": ident.reply_to,
-                "subject": rendered.subject,
-                "text": rendered.text,
-                "html": rendered.html,
-                "headers": list_unsubscribe_headers(email, ident),
-            },
+            json=payload,
             timeout=_TIMEOUT,
         )
         data = resp.json() if resp.content else {}

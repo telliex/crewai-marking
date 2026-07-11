@@ -3,7 +3,12 @@ import httpx
 import respx
 
 from awkns_outreach.db.models import Campaign, Lead
-from awkns_outreach.send.mailer import render_step, render_template_preview, send_outreach_email
+from awkns_outreach.send.mailer import (
+    render_step,
+    render_template_preview,
+    sanitize_rich_body,
+    send_outreach_email,
+)
 
 _SEQUENCE = [
     {"key": "intro", "delay_days": 0,
@@ -94,3 +99,95 @@ def test_send_error_surfaces():
     )
     res = send_outreach_email(_lead(), _campaign(), "k@toyota.co.jp", 0, dry_run=False)
     assert not res.ok and "invalid from" in res.error
+
+
+@respx.mock
+def test_resend_send_includes_base64_attachment_from_disk(tmp_path, monkeypatch):
+    import awkns_outreach.send.mailer as mailer_module
+    monkeypatch.setattr(mailer_module, "UPLOAD_DIR", tmp_path)
+    (tmp_path / "abc123.pdf").write_bytes(b"%PDF-fake-content")
+
+    route = respx.post("https://api.resend.com/emails").mock(
+        return_value=httpx.Response(200, json={"id": "resend-123"})
+    )
+    campaign = _campaign()
+    campaign.sequence = [{
+        "key": "intro", "delay_days": 0, "subject": "s", "body": "b",
+        "attachments": [{"filename": "proposal.pdf", "stored_name": "abc123.pdf", "content_type": "application/pdf"}],
+    }]
+    res = send_outreach_email(_lead(), campaign, "k@toyota.co.jp", 0, dry_run=False)
+    assert res.ok
+    payload = route.calls.last.request.content.decode()
+    assert '"filename":"proposal.pdf"' in payload.replace(" ", "")
+    import base64
+    assert base64.b64encode(b"%PDF-fake-content").decode() in payload
+
+
+@respx.mock
+def test_resend_send_without_attachments_omits_attachments_key():
+    route = respx.post("https://api.resend.com/emails").mock(
+        return_value=httpx.Response(200, json={"id": "resend-123"})
+    )
+    send_outreach_email(_lead(), _campaign(), "k@toyota.co.jp", 0, dry_run=False)
+    payload = route.calls.last.request.content.decode()
+    assert "attachments" not in payload
+
+
+# --- Rich-text (Quill-authored) template bodies -----------------------------
+
+def test_sanitize_rich_body_strips_disallowed_tags_and_attributes():
+    dirty = '<p style="color:red" onclick="x()">Hi <script>alert(1)</script><b>there</b></p>'
+    clean = sanitize_rich_body(dirty)
+    assert "style=" not in clean and "onclick=" not in clean
+    assert "<script>" not in clean and "alert(1)" not in clean
+    assert "<p>Hi there</p>" == clean  # <b> isn't in the allowlist, text is kept
+
+
+def test_sanitize_rich_body_keeps_allowed_formatting_and_link_href():
+    clean = sanitize_rich_body('<p><strong>Hi</strong> <em>there</em>, <a href="https://x.com">link</a></p>')
+    assert '<strong>Hi</strong>' in clean
+    assert '<em>there</em>' in clean
+    assert '<a href="https://x.com" rel="noopener noreferrer">link</a>' in clean
+
+
+def test_render_step_with_quill_html_body_produces_readable_text_alt_part():
+    campaign = _campaign()
+    campaign.sequence = [{
+        "key": "intro", "delay_days": 0, "subject": "s",
+        "body": "<p>Hi {first_name},</p><p>{angle}</p><ul><li>Point one</li><li>Point two</li></ul>",
+    }]
+    r = render_step(_lead(angle="Nice work."), campaign, 0, "k@toyota.co.jp")
+    assert "<p>Hi Kenji,</p>" in r.html and "<li>Point one</li>" in r.html
+    assert "Hi Kenji," in r.text and "Nice work." in r.text
+    assert "- Point one" in r.text and "- Point two" in r.text
+    assert "<p>" not in r.text and "<li>" not in r.text
+
+
+def test_sanitize_rich_body_keeps_img_src_and_alt_strips_other_attrs():
+    clean = sanitize_rich_body('<p><img src="https://x.com/a.png" alt="A" onerror="x()" style="width:9999px"></p>')
+    assert '<img src="https://x.com/a.png" alt="A">' in clean
+
+
+def test_sanitize_rich_body_strips_javascript_scheme_img_src():
+    clean = sanitize_rich_body('<img src="javascript:alert(1)">')
+    assert "javascript:" not in clean
+
+
+def test_render_step_with_image_produces_bracketed_url_in_text_alt_part():
+    campaign = _campaign()
+    campaign.sequence = [{
+        "key": "intro", "delay_days": 0, "subject": "s",
+        "body": '<p>Hi {first_name}</p><img src="https://x.com/a.png" alt="logo">',
+    }]
+    r = render_step(_lead(), campaign, 0, "k@toyota.co.jp")
+    assert '<img src="https://x.com/a.png" alt="logo">' in r.html
+    assert "[image: https://x.com/a.png]" in r.text
+
+
+def test_preview_sanitizes_and_renders_quill_html_body():
+    r = render_template_preview(
+        "hi {company}", '<p onclick="x()">Hi {first_name}, <a href="https://x.com">link</a></p>', "jamie@x.com",
+    )
+    assert "onclick" not in r.html
+    assert '<a href="https://x.com" rel="noopener noreferrer">link</a>' in r.html
+    assert "Hi Jamie, link (https://x.com)" in r.text

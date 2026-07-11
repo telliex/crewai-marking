@@ -8,7 +8,9 @@ Resend webhook) and the HTTP-Basic-gated admin dashboard. Run with:
 from __future__ import annotations
 
 from fastapi import FastAPI
+from fastapi.staticfiles import StaticFiles
 
+from awkns_outreach.uploads import UPLOAD_DIR
 from awkns_outreach.web.routes import admin, mailboxes, public, templates_lib
 
 
@@ -18,6 +20,9 @@ def create_app() -> FastAPI:
     app.include_router(admin.router)
     app.include_router(mailboxes.router)
     app.include_router(templates_lib.router)
+
+    UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+    app.mount("/uploads", StaticFiles(directory=UPLOAD_DIR), name="uploads")
 
     @app.get("/healthz", include_in_schema=False)
     def healthz() -> dict[str, str]:
