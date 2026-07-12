@@ -8,13 +8,18 @@ compliant rate-limited sending, unsubscribe/bounce handling — is in-house.
 Campaign (titles + seed domains)
    │  Apollo searchPeople (free)  →  bulkMatch (unlock email, spends credits)
    ▼
-Lead (Postgres)  ──CrewAI writes {angle}──▶  Sequencer  ──Resend──▶  inbox
-   ▲                                             │  warmup · 24h cap · business hours
-   └──── unsubscribe / bounce webhook ───────────┘  · suppression · CAS claim
+Lead (Postgres) ──CrewAI writes {angle}, AI tier A/B/C──▶  Task  ──▶  Sequencer  ──Resend/Gmail──▶  inbox
+   ▲                                                         ▲              │  warmup · 24h cap · business hours
+   │                                   EmailTemplate ──▶ MailSequence        │  · suppression · CAS claim
+   └──── unsubscribe / bounce webhook ───────────────────────────────────────┘
 ```
 
-Apollo is the only external dependency for lead data; sending (Resend), CRM
-(Postgres), and copy (Claude/CrewAI) are all ours.
+Apollo is the only external dependency for lead data; sending (Resend/Gmail),
+CRM (Postgres), and copy (Claude/CrewAI) are all ours. Leads get an A/B/C
+fit tier — AI-classified from the campaign's leads page (`writer/tiers.py`),
+or set manually — and a `Task` picks a `Campaign` plus a `MailSequence` per
+tier before it can be scheduled; a lead with no tier set is treated as tier B
+when a Task sends.
 
 ## Setup
 
@@ -37,6 +42,11 @@ uv run alembic upgrade head
 # Local dev without Postgres: point DATABASE_URL at SQLite — tables are created
 # from the models (see tests). SQLite maps JSONB/ARRAY to plain JSON.
 ```
+**Deploying schema changes:** before upgrading past migration `0009_tasks_restructure`
+(the Campaign → Task cutover), stop any running/scheduled sequence-based send —
+any in-flight send halts at that migration by design, and there's no automatic
+backfill to a `Task`. Recreate the send as a `Task` after upgrading. See the
+migration file's docstring for the full detail.
 
 ### 4. Run the web service (admin dashboard + compliance endpoints)
 ```bash
@@ -55,6 +65,12 @@ uv run outreach run <campaign_id>                          # DRY-RUN (default; s
 uv run outreach run <campaign_id> --send                   # send for real
 uv run outreach cron --interval 15 --send                  # scheduled small batches
 ```
+`list` shows each campaign's currently active `Task` (or "no active task").
+`run` now resolves and advances the campaign's `running` Task and exits with
+an error if there isn't one, even with leads and angles ready; `cron` shares
+the same `run_all_campaigns()` helper and just skips campaigns with no
+running Task. Create and start a Task from the admin dashboard's Tasks page
+first.
 
 ## Guardrails (why this stays out of spam)
 
@@ -81,17 +97,22 @@ for the first week, watch deliverability, then turn on `cron`.
 | Module | Role |
 |---|---|
 | `apollo/` | Apollo client + enrich (search → reveal → upsert leads) |
-| `db/` | ORM models (Campaign / Lead / Event / Suppression) + Alembic |
-| `sequencer/` | the engine: caps, hours, suppression, CAS claim, pacing, retry |
+| `db/` | ORM models (Campaign / Lead / Event / Suppression / EmailTemplate / MailSequence / Task) + Alembic |
+| `sequencer/` | the engine: caps, hours, suppression, CAS claim, pacing, retry; `lifecycle.py` owns Task schedule/start/pause/stop |
 | `send/` | Resend send + inbox-friendly rendering |
 | `compliance.py` | unsubscribe tokens, headers, footer, legal gate, suppression |
-| `writer/` | CrewAI angle generator (the only AI-written part of the email) |
+| `writer/` | `angle.py`: CrewAI per-lead `{angle}` generator; `tiers.py`: AI A/B/C lead-tier classifier |
 | `web/` | FastAPI: admin dashboard + unsubscribe + webhook |
 | `cli.py` / `scheduler.py` | manual and cron drivers |
 
-Copy is **templated per campaign** (`Campaign.sequence`); the AI writes only the
-one-sentence `{angle}`. Reply handling (inbound → AI draft → human approval) is a
-planned v2 — `Lead.thread_ref` is already tracked for it.
+Copy is **not campaign-bound** — an `EmailTemplate` (single email) or
+`MailSequence` (ordered steps, reusable) is written once and assigned to a
+campaign's leads only via a `Task`, which snapshots the sequence assigned to
+each lead's tier into `Task.steps_by_tier` when it starts (later edits to the
+`MailSequence` don't affect an in-flight Task). The AI still writes only the
+one-sentence `{angle}` — that generator (`writer/angle.py`) is unchanged by
+the tiering/Task work. Reply handling (inbound → AI draft → human approval)
+is a planned v2 — `Lead.thread_ref` is already tracked for it.
 
 ## Tests
 ```bash
