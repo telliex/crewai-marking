@@ -147,7 +147,7 @@ def test_enrich_carries_seed_metadata_and_apollo_overwrites(db_session):
         name="Test", target_titles=["creative director"],
         seed_companies=[{
             "name": "Toyota", "website": "toyota.co.jp", "country": "JP",
-            "category": "automotive", "priority": "A", "angle": "seed angle",
+            "category": "automotive", "tier": "A", "angle": "seed angle",
         }],
     )
     db_session.add(c)
@@ -158,11 +158,65 @@ def test_enrich_carries_seed_metadata_and_apollo_overwrites(db_session):
     # Apollo facts overwrite the seed's overlapping fields.
     assert lead.company == "Toyota Motor Corp"
     assert lead.website == "https://global.toyota"
-    # Seed-only metadata carries through (Apollo has no priority/angle here).
+    # Seed-only metadata carries through (Apollo has no tier/angle here).
     assert lead.country == "JP"
     assert lead.category == "automotive"
-    assert lead.priority == "A"
+    assert lead.tier == "A"
     assert lead.angle == "seed angle"
+
+
+@respx.mock
+def test_enrich_captures_seniority_and_employee_count(db_session):
+    """Apollo-sourced classifier signals (seniority, org headcount) land on
+    the lead — these feed the later AI tiering pass."""
+    respx.post(f"{BASE}/mixed_people/api_search").mock(
+        return_value=httpx.Response(200, json={
+            "people": [{"id": "p1", "title": "Creative Director",
+                        "email": "kenji@email_not_unlocked@toyota.co.jp",
+                        "organization": {"name": "Toyota"}}],
+            "pagination": {"total_entries": 1}})
+    )
+    respx.post(f"{BASE}/people/bulk_match").mock(
+        return_value=httpx.Response(200, json={"matches": [
+            {"id": "p1", "name": "Kenji Tanaka", "email": "k@toyota.co.jp",
+             "title": "Creative Director", "seniority": "vp",
+             "organization": {"name": "Toyota Motor Corp",
+                              "estimated_num_employees": 42000}}]})
+    )
+    c = _campaign(db_session)
+
+    enrich_campaign(db_session, c, reveal=True, limit=10)
+    lead = db_session.query(Lead).one()
+    assert lead.seniority == "vp"
+    assert lead.employee_count == 42000
+
+
+@respx.mock
+def test_enrich_legacy_seed_priority_key_still_populates_tier(db_session):
+    """Seed JSON written before the tier rename used the "priority" key —
+    keep reading it so old campaign.seed_companies data keeps working."""
+    respx.post(f"{BASE}/mixed_people/api_search").mock(
+        return_value=httpx.Response(200, json={
+            "people": [{"id": "p1", "title": "Creative Director",
+                        "email": "kenji@email_not_unlocked@toyota.co.jp",
+                        "organization": {"name": "Toyota"}}],
+            "pagination": {"total_entries": 1}})
+    )
+    respx.post(f"{BASE}/people/bulk_match").mock(
+        return_value=httpx.Response(200, json={"matches": [
+            {"id": "p1", "name": "Kenji Tanaka", "email": "k@toyota.co.jp",
+             "title": "Creative Director", "organization": {"name": "Toyota"}}]})
+    )
+    c = Campaign(
+        name="Test", target_titles=["creative director"],
+        seed_companies=[{"website": "toyota.co.jp", "priority": "B"}],
+    )
+    db_session.add(c)
+    db_session.flush()
+
+    enrich_campaign(db_session, c, reveal=True, limit=10)
+    lead = db_session.query(Lead).one()
+    assert lead.tier == "B"
 
 
 @respx.mock

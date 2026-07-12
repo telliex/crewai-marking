@@ -7,7 +7,7 @@
   <td class="px-2 py-1"><input name="website" value="{{ co.website or '' }}" class="w-full border rounded px-1.5 py-1 text-sm" placeholder="toyota.co.jp"></td>
   <td class="px-2 py-1"><input name="country" value="{{ co.country or '' }}" class="w-full border rounded px-1.5 py-1 text-sm" placeholder="JP"></td>
   <td class="px-2 py-1"><input name="category" value="{{ co.category or '' }}" class="w-full border rounded px-1.5 py-1 text-sm" placeholder="automotive"></td>
-  <td class="px-2 py-1"><input name="priority" value="{{ co.priority or '' }}" class="w-16 border rounded px-1.5 py-1 text-sm" placeholder="A"></td>
+  <td class="px-2 py-1"><input name="tier" value="{{ co.tier or '' }}" class="w-16 border rounded px-1.5 py-1 text-sm" placeholder="A"></td>
   <td class="px-2 py-1"><input name="angle" value="{{ co.angle or '' }}" class="w-full border rounded px-1.5 py-1 text-sm" placeholder="why this fits them"></td>
   <td class="px-2 py-1 text-right"><button type="button" onclick="removeRow(this)" class="text-xs text-red-600 hover:underline">Remove</button></td>
 </tr>
@@ -29,7 +29,7 @@
         <tr>
           <th class="px-2 py-2">Name</th><th class="px-2 py-2">Website</th>
           <th class="px-2 py-2">Country</th><th class="px-2 py-2">Category</th>
-          <th class="px-2 py-2">Priority</th><th class="px-2 py-2">Angle</th><th></th>
+          <th class="px-2 py-2">Tier</th><th class="px-2 py-2">Angle</th><th></th>
         </tr>
       </thead>
       <tbody id="rows">
@@ -50,7 +50,7 @@
   <h2 class="text-sm font-semibold mb-2">Import companies</h2>
   <form method="post" action="/campaigns/{{ c.id }}/companies" enctype="multipart/form-data" class="space-y-2">
     <input type="hidden" name="action" value="import">
-    <p class="text-xs text-slate-500">JSON array or CSV · columns: name, website, country, category, priority, angle</p>
+    <p class="text-xs text-slate-500">JSON array or CSV · columns: name, website, country, category, tier, angle</p>
     <input type="file" name="seed_file" accept=".json,.csv"
       class="block w-full text-sm file:mr-2 file:rounded file:border file:bg-white file:px-2 file:py-1">
     <textarea name="seed_text" rows="3" class="w-full border rounded px-2 py-1.5 font-mono text-xs"

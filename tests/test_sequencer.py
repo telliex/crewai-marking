@@ -221,6 +221,34 @@ def test_empty_sequence_blocked_and_does_not_complete_leads(db_session):
     assert lead.status == "active"
 
 
+def test_tier_ordering_a_before_null_before_c(db_session, monkeypatch):
+    """A lead's tier orders the send queue: "A" first, NULL tier (counts as
+    "B") next, "C" last. With a budget of 1, only the "A" lead sends."""
+    _mock_ok(monkeypatch)
+    c = _campaign(db_session)
+    lead_c = _lead(db_session, c, email="c@x.com", tier="C")
+    lead_null = _lead(db_session, c, email="null@x.com", tier=None)
+    lead_a = _lead(db_session, c, email="a@x.com", tier="A")
+
+    s = engine.process_campaign(db_session, c, dry_run=False, now=NOW, ignore_hours=True,
+                                gap_ms=0, max_this_run=1)
+    assert s.sent == 1
+    db_session.refresh(lead_a)
+    db_session.refresh(lead_null)
+    db_session.refresh(lead_c)
+    assert lead_a.step == 1          # "A" sent first
+    assert lead_null.step == 0       # NULL (as "B") not reached this run
+    assert lead_c.step == 0          # "C" not reached this run
+
+    s2 = engine.process_campaign(db_session, c, dry_run=False, now=NOW, ignore_hours=True,
+                                 gap_ms=0, max_this_run=1)
+    assert s2.sent == 1
+    db_session.refresh(lead_null)
+    db_session.refresh(lead_c)
+    assert lead_null.step == 1       # NULL/"B" sent before "C"
+    assert lead_c.step == 0
+
+
 def test_cas_claim_is_single_winner(db_session):
     """The compare-and-swap that prevents double-sends: only the first UPDATE
     active→sending at (id, step) wins; a second sees rowcount 0."""

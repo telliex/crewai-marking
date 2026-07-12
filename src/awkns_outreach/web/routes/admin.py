@@ -319,7 +319,7 @@ def save_companies(
     website: list[str] = Form(default=[]),
     country: list[str] = Form(default=[]),
     category: list[str] = Form(default=[]),
-    priority: list[str] = Form(default=[]),
+    tier: list[str] = Form(default=[]),
     angle: list[str] = Form(default=[]),
     db: Session = Depends(get_db),
 ):
@@ -343,7 +343,7 @@ def save_companies(
     else:  # save row edits
         rows = _rows_from_form({
             "name": name, "website": website, "country": country,
-            "category": category, "priority": priority, "angle": angle,
+            "category": category, "tier": tier, "angle": angle,
         })
         c.seed_companies = rows
         msg = f"Saved {len(rows)} companies."

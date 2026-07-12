@@ -46,7 +46,6 @@ class Campaign(Base):
     name: Mapped[str] = mapped_column(String, nullable=False)
     description: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     status: Mapped[str] = mapped_column(String, default="active")  # active | paused | archived
-    tier: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
 
     # Apollo people-search inputs.
     target_titles: Mapped[list[str]] = mapped_column(
@@ -54,7 +53,7 @@ class Campaign(Base):
     )
     # Seed company list (companies.json shape). Each entry is a dict with all
     # fields optional — only `website` is required to derive the Apollo query
-    # domain. Extra metadata (name/country/category/priority/angle) is carried
+    # domain. Extra metadata (name/country/category/tier/angle) is carried
     # onto the resulting leads; Apollo-returned facts overwrite on conflict.
     seed_companies: Mapped[list[dict[str, Any]]] = mapped_column(
         JSONType, default=list, nullable=False
@@ -120,10 +119,13 @@ class Lead(Base):
     contact_title: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     country: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     category: Mapped[Optional[str]] = mapped_column(String, nullable=True)
-    priority: Mapped[Optional[str]] = mapped_column(String, nullable=True)  # A|B|C
+    tier: Mapped[Optional[str]] = mapped_column(String, nullable=True)  # A|B|C
     website: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     angle: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     vars: Mapped[Optional[dict[str, Any]]] = mapped_column(JSONType, nullable=True)
+    # Apollo-sourced classifier signals (feed the later AI tiering pass).
+    seniority: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    employee_count: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
 
     # Sequence cursor = index of the NEXT step to send = steps already sent.
     step: Mapped[int] = mapped_column(Integer, default=0, nullable=False)

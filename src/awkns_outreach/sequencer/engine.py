@@ -120,7 +120,7 @@ def process_campaign(
             (Lead.next_action_at.is_(None)) | (Lead.next_action_at <= now),
         )
         .order_by(
-            Lead.priority.asc().nulls_last(),  # "A" < "B" < "C"; NULLs last
+            func.coalesce(Lead.tier, "B").asc(),  # "A" < "B" < "C"; NULL tier counts as "B"
             Lead.next_action_at.asc(),
             Lead.created_at.asc(),
         )

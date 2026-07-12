@@ -68,6 +68,7 @@ class ApolloPerson:
     email: Optional[str] = None
     email_status: Optional[str] = None
     linkedin_url: Optional[str] = None
+    seniority: Optional[str] = None
     organization: dict[str, Any] = field(default_factory=dict)
 
     @classmethod
@@ -81,6 +82,7 @@ class ApolloPerson:
             email=d.get("email"),
             email_status=d.get("email_status"),
             linkedin_url=d.get("linkedin_url"),
+            seniority=d.get("seniority"),
             organization=d.get("organization") or {},
         )
 

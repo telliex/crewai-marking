@@ -17,13 +17,13 @@
   <div>
     <label class="block text-sm font-medium mb-1">Seed companies <span class="text-slate-400 font-normal">(optional — add or edit later)</span></label>
     <p class="text-xs text-slate-500 mb-1">
-      Upload a <b>JSON</b> array or <b>CSV</b>. Columns: name, website, country, category, priority, angle
+      Upload a <b>JSON</b> array or <b>CSV</b>. Columns: name, website, country, category, tier, angle
       (all optional; only <code>website</code> is used to query Apollo).
     </p>
     <input type="file" name="seed_file" accept=".json,.csv"
       class="block w-full text-sm mb-2 file:mr-2 file:rounded file:border file:bg-white file:px-2 file:py-1">
     <textarea name="seed_text" rows="4" class="w-full border rounded px-2 py-1.5 font-mono text-xs"
-      placeholder='…or paste JSON/CSV here, e.g.&#10;[{"name":"Toyota","website":"toyota.co.jp","country":"JP","priority":"A"}]'></textarea>
+      placeholder='…or paste JSON/CSV here, e.g.&#10;[{"name":"Toyota","website":"toyota.co.jp","country":"JP","tier":"A"}]'></textarea>
   </div>
   <div>
     <label class="block text-sm font-medium mb-1">Angle prompt <span class="text-slate-400 font-normal">(optional)</span></label>

@@ -11,10 +11,10 @@ discover.ts) so each returned person stays tied to its seed company — that let
 us carry the seed metadata (country/category/priority/angle) onto the lead.
 
 Merge rule: seed metadata is the base; Apollo-returned facts (company/website/
-country/category/contact) overwrite where Apollo has a value. Apollo has no
-priority/angle, so those always come from the seed. On re-enrich an existing
-lead's Apollo facts are refreshed; priority/angle are only backfilled if empty
-(never clobbering an AI-generated or hand-edited angle).
+country/category/contact/seniority/employee_count) overwrite where Apollo has
+a value. Apollo has no tier/angle, so those always come from the seed. On
+re-enrich an existing lead's Apollo facts are refreshed; tier/angle are only
+backfilled if empty (never clobbering an AI-generated or hand-edited angle).
 """
 from __future__ import annotations
 
@@ -101,7 +101,7 @@ def _search_candidates(
 def _merge_fields(seed: dict[str, Any], person: ApolloPerson) -> dict[str, Any]:
     """Compute a lead's fields: seed metadata base, Apollo facts overwriting.
 
-    Apollo has no priority/angle, so those come straight from the seed.
+    Apollo has no tier/angle, so those come straight from the seed.
     """
     org = person.organization or {}
     company = org.get("name") or seed.get("name") or ""
@@ -118,7 +118,10 @@ def _merge_fields(seed: dict[str, Any], person: ApolloPerson) -> dict[str, Any]:
         "country": org.get("country") or seed.get("country"),
         "category": org.get("industry") or seed.get("category"),
         "website": website,
-        "priority": seed.get("priority"),
+        "seniority": person.seniority,
+        "employee_count": org.get("estimated_num_employees"),
+        # Legacy seed JSON stored the field under "priority" — keep reading it.
+        "tier": seed.get("tier") or seed.get("priority"),
         "angle": seed.get("angle"),
     }
 
@@ -170,7 +173,7 @@ def _upsert_lead(
     """Insert or refresh a lead for this email. Returns "created" | "updated".
 
     New lead: all merged fields. Existing lead: refresh Apollo facts; only
-    backfill priority/angle if they are still empty (don't clobber edits).
+    backfill tier/angle if they are still empty (don't clobber edits).
     """
     email = (person.email or "").strip().lower()
     fields = _merge_fields(seed, person)
@@ -191,12 +194,12 @@ def _upsert_lead(
 
     # Refresh Apollo-derived facts (overwrite only when Apollo has a value).
     for key in ("apollo_person_id", "company", "contact_name", "contact_title",
-                "country", "category", "website"):
+                "country", "category", "website", "seniority", "employee_count"):
         value = fields.get(key)
         if value:
             setattr(existing, key, value)
     # Seed-only fields: fill just when the lead has none yet.
-    for key in ("priority", "angle"):
+    for key in ("tier", "angle"):
         if fields.get(key) and not getattr(existing, key):
             setattr(existing, key, fields[key])
     return "updated"

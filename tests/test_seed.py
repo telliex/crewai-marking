@@ -13,9 +13,15 @@ def test_parse_json_array_normalizes_website_and_aliases():
     out = parse_seed_companies(raw, "companies.json")
     assert out == [
         {"name": "Toyota", "website": "toyota.co.jp",
-         "category": "automotive", "priority": "A", "angle": "cars"},
+         "category": "automotive", "tier": "A", "angle": "cars"},
         {"name": "Sony", "website": "sony.co.jp"},
     ]
+
+
+def test_parse_json_array_legacy_priority_key_maps_to_tier():
+    # Both spellings of the column are accepted; either maps to canonical "tier".
+    out = parse_seed_companies('[{"name": "Toyota", "priority": "A"}]', None)
+    assert out == [{"name": "Toyota", "tier": "A"}]
 
 
 def test_parse_single_json_object_wrapped():
@@ -36,7 +42,7 @@ def test_parse_row_without_website_is_kept_but_has_no_domain():
     # A metadata-only row survives (website is optional); enrich will skip it
     # at query time since it can't derive a domain.
     out = parse_seed_companies('[{"name": "NoSite", "priority": "C"}]', None)
-    assert out == [{"name": "NoSite", "priority": "C"}]
+    assert out == [{"name": "NoSite", "tier": "C"}]
 
 
 def test_parse_empty_returns_empty():

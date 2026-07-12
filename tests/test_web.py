@@ -114,7 +114,8 @@ def test_admin_create_and_view_campaign(client, session, monkeypatch):
     c = session.query(Campaign).one()
     assert c.name == "JP studios"
     assert c.target_titles == ["creative director", "head of content"]
-    assert c.seed_companies == [{"name": "Toyota", "website": "toyota.co.jp", "priority": "A"}]
+    # Legacy "priority" key in the pasted JSON is normalized to canonical "tier".
+    assert c.seed_companies == [{"name": "Toyota", "website": "toyota.co.jp", "tier": "A"}]
 
     detail = client.get(f"/campaigns/{c.id}", auth=auth)
     assert detail.status_code == 200 and "JP studios" in detail.text
