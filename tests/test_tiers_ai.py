@@ -47,7 +47,7 @@ def test_parse_response_non_json_raises():
 def _make_campaign(session, **kwargs):
     c = Campaign(
         name="Test campaign", target_titles=["VP Sales"], seed_companies=[],
-        sequence=[], sender_identity={}, **kwargs,
+        sender_identity={}, **kwargs,
     )
     session.add(c)
     session.flush()

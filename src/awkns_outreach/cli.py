@@ -35,12 +35,18 @@ def _get(session, campaign_id: str) -> Campaign:
 def list_campaigns() -> None:
     """List campaigns and their lead counts."""
     from sqlalchemy import func, select
-    from awkns_outreach.db.models import Lead
+    from awkns_outreach.db.models import Lead, Task
 
     with session_scope() as s:
         for c in s.scalars(select(Campaign).order_by(Campaign.created_at)).all():
             n = s.scalar(select(func.count()).select_from(Lead).where(Lead.campaign_id == c.id))
-            typer.echo(f"{c.id}  {c.name}  ({n} leads, {len(c.sequence or [])} steps)")
+            task = s.scalar(
+                select(Task)
+                .where(Task.campaign_id == c.id, Task.status.in_(("scheduled", "running", "paused")))
+                .order_by(Task.created_at.desc())
+            )
+            task_desc = f"{task.name} [{task.status}]" if task else "no active task"
+            typer.echo(f"{c.id}  {c.name}  ({n} leads, {task_desc})")
 
 
 @app.command()
@@ -82,13 +88,19 @@ def run(
     max_this_run: int = typer.Option(5, "--max", help="Cap sends this invocation."),
     ignore_hours: bool = typer.Option(False, help="Bypass the business-hours gate (testing/manual)."),
 ) -> None:
-    """Advance one campaign's sequence. DRY-RUN unless --send."""
+    """Advance one campaign's running Task. DRY-RUN unless --send."""
+    from sqlalchemy import select
+    from awkns_outreach.db.models import Task
     from awkns_outreach.sequencer import process_campaign
 
     with session_scope() as s:
         c = _get(s, campaign_id)
-        summary = process_campaign(s, c, dry_run=not send, max_this_run=max_this_run,
-                                   ignore_hours=ignore_hours)
+        task = s.scalar(select(Task).where(Task.campaign_id == c.id, Task.status == "running"))
+        if task is None:
+            typer.secho(f"No running task for campaign {c.name}.", fg="red")
+            raise typer.Exit(1)
+        summary = process_campaign(s, c, task.steps_by_tier, dry_run=not send,
+                                   max_this_run=max_this_run, ignore_hours=ignore_hours)
     if summary.blocked:
         typer.secho(f"BLOCKED: {summary.blocked}", fg="red")
         raise typer.Exit(1)

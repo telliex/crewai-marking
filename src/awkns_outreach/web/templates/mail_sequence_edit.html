@@ -89,19 +89,6 @@
       <input name="name" required value="{{ seq.name if seq else '' }}"
              class="mt-1 w-full border rounded px-2 py-1.5 text-sm">
     </label>
-    <label class="text-sm font-medium">Group
-      <select name="campaign_id" required class="mt-1 w-full border rounded px-2 py-1.5 text-sm"
-              {% if seq and seq.status != 'draft' %}disabled{% endif %}>
-        <option value="">— choose a group —</option>
-        {% for g in groups %}
-        <option value="{{ g.id }}" {% if seq and seq.campaign_id == g.id %}selected{% endif %}>{{ g.name }}</option>
-        {% endfor %}
-      </select>
-      {% if seq and seq.status != 'draft' %}
-      <input type="hidden" name="campaign_id" value="{{ seq.campaign_id }}">
-      <span class="block text-[10px] text-slate-400 mt-0.5">Group can't be changed once scheduled.</span>
-      {% endif %}
-    </label>
   </div>
 
   <div id="steps">

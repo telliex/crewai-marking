@@ -128,10 +128,6 @@ def _send_test_email_once(
     sequence step would take. Returns the raw SendResult."""
     test_campaign = Campaign(
         id="preview", name="Template test send", target_titles=[], seed_companies=[],
-        sequence=[{
-            "key": "test", "delay_days": 0, "subject": subject, "body": body,
-            "attachments": attachments or [],
-        }],
         sender_identity={},
     )
     test_campaign.mailbox = mailbox
@@ -141,7 +137,11 @@ def _send_test_email_once(
         angle="Your recent campaign work would translate beautifully into short-form video.",
         status="active", step=0,
     )
-    return send_outreach_email(test_lead, test_campaign, recipient, 0, dry_run=False)
+    steps = [{
+        "key": "test", "delay_days": 0, "subject": subject, "body": body,
+        "attachments": attachments or [],
+    }]
+    return send_outreach_email(test_lead, test_campaign, recipient, 0, steps, dry_run=False)
 
 
 def _send_test_email(

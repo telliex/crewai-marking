@@ -1,0 +1,9 @@
+<div id="task-tier-counts" class="text-xs text-slate-500">
+  {% if tier_counts is none %}
+  Select a campaign to see its lead counts per tier.
+  {% else %}
+  A: {{ tier_counts.A }} &middot;
+  B: {{ tier_counts.B }}{% if tier_counts.unclassified %} (incl. {{ tier_counts.unclassified }} unclassified){% endif %} &middot;
+  C: {{ tier_counts.C }}
+  {% endif %}
+</div>

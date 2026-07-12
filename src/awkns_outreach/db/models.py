@@ -3,7 +3,9 @@
 Ported from yoh's Prisma schema (OutreachLead / OutreachEvent /
 OutreachSuppression), plus a `Campaign` parent so one deployment can run many
 targets ("針對不同的目標"): each campaign owns its target titles, seed domains,
-sequence copy, angle prompt, and sender identity.
+angle prompt, and sender identity. Sequence content lives on `MailSequence`;
+a `Task` assigns sequences (per lead tier) to a Campaign and owns the send
+lifecycle.
 """
 from __future__ import annotations
 
@@ -59,11 +61,6 @@ class Campaign(Base):
         JSONType, default=list, nullable=False
     )
 
-    # Sequence copy: list of {key, delay_days, subject, body} (body/subject are
-    # templates rendered against the lead — see sequencer.templating).
-    sequence: Mapped[list[dict[str, Any]]] = mapped_column(
-        JSONType, default=list, nullable=False
-    )
     # Prompt the writer uses to generate each lead's personalized `angle`.
     angle_prompt: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     # Per-campaign sender identity overrides (from, from_name, reply_to,
@@ -92,7 +89,7 @@ class Campaign(Base):
         back_populates="campaign", cascade="all, delete-orphan"
     )
     mailbox: Mapped[Optional["Mailbox"]] = relationship(back_populates="campaigns")
-    mail_sequences: Mapped[list["MailSequence"]] = relationship(
+    tasks: Mapped[list["Task"]] = relationship(
         back_populates="campaign", cascade="all, delete-orphan"
     )
 
@@ -273,31 +270,18 @@ class EmailTemplate(Base):
 
 
 class MailSequence(Base):
-    """A standalone marketing campaign: targets one existing `Campaign` (a
-    "Group" of leads) and runs an ordered list of email steps against it.
-    Steps are copied `EmailTemplate` instances, not live references — once a
-    sequence starts, its `steps` are a snapshot, so later edits to the source
-    templates don't change an in-flight send."""
+    """Reusable email-sequence content — like `EmailTemplate`, but an ordered
+    list of steps instead of a single email. Not tied to any campaign; a
+    `Task` assigns one sequence per lead tier and, at start, copies its
+    `steps` into `Task.steps_by_tier` (a snapshot, not a live reference), so
+    later edits here don't change an in-flight send."""
 
     __tablename__ = "mail_sequence"
 
     id: Mapped[str] = mapped_column(String, primary_key=True, default=_uuid)
     name: Mapped[str] = mapped_column(String, nullable=False)
-    campaign_id: Mapped[str] = mapped_column(
-        ForeignKey("campaign.id", ondelete="CASCADE"), nullable=False
-    )
-    # draft | scheduled | running | paused | stopped | completed
-    status: Mapped[str] = mapped_column(String, default="draft", nullable=False)
-
-    scheduled_start_at: Mapped[Optional[datetime]] = mapped_column(
-        DateTime(timezone=True), nullable=True
-    )
-    started_at: Mapped[Optional[datetime]] = mapped_column(
-        DateTime(timezone=True), nullable=True
-    )
-    completed_at: Mapped[Optional[datetime]] = mapped_column(
-        DateTime(timezone=True), nullable=True
-    )
+    # active | archived
+    status: Mapped[str] = mapped_column(String, default="active", nullable=False)
 
     # Ordered step list, snapshotted from EmailTemplate rows at build time:
     # {key, delay_days, subject, body, attachments, source_template_id}.
@@ -314,4 +298,66 @@ class MailSequence(Base):
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
     )
 
-    campaign: Mapped["Campaign"] = relationship(back_populates="mail_sequences")
+
+class Task(Base):
+    """A send campaign: picks one `Campaign`, assigns a `MailSequence` per
+    lead tier (`sequences` = {"A": seq_id, "B": seq_id, "C": seq_id}, partial
+    assignment allowed — an unassigned tier's leads are parked, not sent
+    to), and owns the schedule window (`scheduled_start_at` + optional
+    `end_at`), the lifecycle, and the execution snapshot.
+
+    `steps_by_tier` is populated (wholesale-reassigned, not mutated
+    in-place) from the assigned sequences' `steps` when the task starts, and
+    reset to `{}` when it stops — see sequencer/lifecycle.py. It is `{}`
+    whenever the task isn't running/paused."""
+
+    __tablename__ = "task"
+    __table_args__ = (
+        Index("ix_task_campaign_status", "campaign_id", "status"),
+    )
+
+    id: Mapped[str] = mapped_column(String, primary_key=True, default=_uuid)
+    name: Mapped[str] = mapped_column(String, nullable=False)
+    campaign_id: Mapped[str] = mapped_column(
+        ForeignKey("campaign.id", ondelete="CASCADE"), nullable=False
+    )
+    # draft | scheduled | running | paused | stopped | completed
+    status: Mapped[str] = mapped_column(String, default="draft", nullable=False)
+
+    scheduled_start_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    # Optional end of the schedule window — past this, the scheduler stops
+    # the task automatically (stop_expired_tasks). NULL = runs indefinitely.
+    end_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    started_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    completed_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+
+    # Per-tier sequence assignment: {tier: mail_sequence_id}. Only assigned
+    # tiers are present (a missing tier means that tier's leads are parked
+    # rather than sent to). At least one tier must be assigned to schedule.
+    sequences: Mapped[dict[str, str]] = mapped_column(
+        JSONType, default=dict, nullable=False
+    )
+    # Execution snapshot: {tier: [step, ...]}, copied from the assigned
+    # sequences' `steps` at start_task. `{}` when not running/paused —
+    # cleared at stop_task so a later resurrection can't resend stale
+    # content (engine.py's empty-steps guard makes process_campaign a no-op).
+    steps_by_tier: Mapped[dict[str, list[dict[str, Any]]]] = mapped_column(
+        JSONType, default=dict, nullable=False
+    )
+
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+    campaign: Mapped["Campaign"] = relationship(back_populates="tasks")

@@ -1,0 +1,51 @@
+{% extends "base.html" %}
+{% block title %}{% if t %}Edit {{ t.name }}{% else %}New task{% endif %} — Awkns Outreach{% endblock %}
+{% block content %}
+<a href="/tasks" class="text-xs text-slate-500 hover:underline">&larr; Tasks</a>
+<h1 class="text-lg font-semibold mb-4">{% if t %}Edit task{% else %}New task{% endif %}</h1>
+
+<form method="post" action="{{ form_action }}" class="space-y-4 max-w-xl">
+  <label class="text-sm font-medium block">Name
+    <input name="name" required value="{{ t.name if t else '' }}"
+           class="mt-1 w-full border rounded px-2 py-1.5 text-sm">
+  </label>
+
+  <label class="text-sm font-medium block">Campaign
+    <select name="campaign_id" required class="mt-1 w-full border rounded px-2 py-1.5 text-sm"
+            hx-get="/tasks/campaign-summary" hx-trigger="change" hx-target="#tier-counts" hx-include="this">
+      <option value="">— choose a campaign —</option>
+      {% for c in campaigns %}
+      <option value="{{ c.id }}" {% if t and t.campaign_id == c.id %}selected{% endif %}>{{ c.name }}</option>
+      {% endfor %}
+    </select>
+  </label>
+
+  <div id="tier-counts">{% include "_task_tier_counts.html" %}</div>
+
+  <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
+    {% for tier in tiers %}
+    <label class="text-sm font-medium block">Tier {{ tier }} sequence
+      <select name="seq_{{ tier }}" class="mt-1 w-full border rounded px-2 py-1.5 text-sm">
+        <option value="">— not contacted —</option>
+        {% for s in sequences %}
+        <option value="{{ s.id }}" {% if t and t.sequences.get(tier) == s.id %}selected{% endif %}>{{ s.name }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    {% endfor %}
+  </div>
+
+  <div class="flex gap-2">
+    <button type="submit" class="rounded bg-slate-900 text-white text-sm px-4 py-2">{% if t %}Save{% else %}Create{% endif %}</button>
+    <a href="/tasks" class="rounded border text-sm px-4 py-2">Cancel</a>
+  </div>
+</form>
+
+{% if t %}
+<form method="post" action="{{ form_action }}" class="mt-2"
+      onsubmit="return confirm('Delete this task? This can\'t be undone.');">
+  <input type="hidden" name="action" value="delete">
+  <button type="submit" class="rounded border text-sm px-4 py-2 text-red-700">Delete</button>
+</form>
+{% endif %}
+{% endblock %}

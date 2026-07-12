@@ -7,17 +7,14 @@
 </div>
 
 <p class="text-xs text-slate-500 mb-4">
-  A sequence is a standalone email campaign: an ordered set of steps sent against one existing group's leads.
+  Reusable email-sequence content — an ordered set of steps. Assign one per lead tier on a
+  <a href="/tasks" class="underline">Task</a> to actually send it against a campaign's leads.
 </p>
 
 <div class="mb-4 flex gap-3 text-xs">
+  <a href="/sequences" class="{% if status_filter == 'active' %}font-semibold text-slate-900{% else %}text-slate-500 hover:underline{% endif %}">Active</a>
+  <a href="/sequences?status=archived" class="{% if status_filter == 'archived' %}font-semibold text-slate-900{% else %}text-slate-500 hover:underline{% endif %}">Archived</a>
   <a href="/sequences?status=all" class="{% if status_filter == 'all' %}font-semibold text-slate-900{% else %}text-slate-500 hover:underline{% endif %}">All</a>
-  <a href="/sequences?status=draft" class="{% if status_filter == 'draft' %}font-semibold text-slate-900{% else %}text-slate-500 hover:underline{% endif %}">Draft</a>
-  <a href="/sequences?status=scheduled" class="{% if status_filter == 'scheduled' %}font-semibold text-slate-900{% else %}text-slate-500 hover:underline{% endif %}">Scheduled</a>
-  <a href="/sequences?status=running" class="{% if status_filter == 'running' %}font-semibold text-slate-900{% else %}text-slate-500 hover:underline{% endif %}">Running</a>
-  <a href="/sequences?status=paused" class="{% if status_filter == 'paused' %}font-semibold text-slate-900{% else %}text-slate-500 hover:underline{% endif %}">Paused</a>
-  <a href="/sequences?status=stopped" class="{% if status_filter == 'stopped' %}font-semibold text-slate-900{% else %}text-slate-500 hover:underline{% endif %}">Stopped</a>
-  <a href="/sequences?status=completed" class="{% if status_filter == 'completed' %}font-semibold text-slate-900{% else %}text-slate-500 hover:underline{% endif %}">Completed</a>
 </div>
 
 {% if not rows %}
@@ -28,7 +25,6 @@
     <thead class="bg-slate-100 text-slate-500 text-left">
       <tr>
         <th class="px-3 py-2">Name</th>
-        <th class="px-3 py-2">Group</th>
         <th class="px-3 py-2">Steps</th>
         <th class="px-3 py-2">Status</th>
         <th class="px-3 py-2">Created</th>
@@ -38,8 +34,7 @@
     <tbody>
       {% for row in rows %}
       {% set s = row.s %}
-      {% set editable = s.status in editable_statuses %}
-      {% set deletable = s.status in deletable_statuses %}
+      {% set editable = s.status == 'active' %}
       <tr class="border-t">
         <td class="px-3 py-2">
           {% if editable %}
@@ -48,21 +43,12 @@
           {{ s.name }}
           {% endif %}
         </td>
-        <td class="px-3 py-2 text-slate-500">{{ row.campaign_name }}</td>
         <td class="px-3 py-2 text-slate-500">{{ s.steps|length }}</td>
         <td class="px-3 py-2">
-          {% if s.status == 'draft' %}
-          <span class="rounded px-1.5 py-0.5 text-xs bg-slate-200 text-slate-600">draft</span>
-          {% elif s.status == 'scheduled' %}
-          <span class="rounded px-1.5 py-0.5 text-xs bg-blue-100 text-blue-800">scheduled</span>
-          {% elif s.status == 'running' %}
-          <span class="rounded px-1.5 py-0.5 text-xs bg-green-100 text-green-800">running</span>
-          {% elif s.status == 'paused' %}
-          <span class="rounded px-1.5 py-0.5 text-xs bg-amber-100 text-amber-800">paused</span>
-          {% elif s.status == 'stopped' %}
-          <span class="rounded px-1.5 py-0.5 text-xs bg-red-100 text-red-800">stopped</span>
+          {% if s.status == 'active' %}
+          <span class="rounded px-1.5 py-0.5 text-xs bg-green-100 text-green-800">active</span>
           {% else %}
-          <span class="rounded px-1.5 py-0.5 text-xs bg-slate-200 text-slate-600">completed</span>
+          <span class="rounded px-1.5 py-0.5 text-xs bg-slate-200 text-slate-600">archived</span>
           {% endif %}
         </td>
         <td class="px-3 py-2 text-slate-500">{{ s.created_at.strftime('%Y-%m-%d') }}</td>
@@ -71,13 +57,21 @@
             {% if editable %}
             <a href="/sequences/{{ s.id }}/edit" class="text-blue-700 hover:underline">Edit</a>
             {% endif %}
-            {% if deletable %}
+            <form method="post" action="/sequences/{{ s.id }}/status" class="inline">
+              <input type="hidden" name="status" value="{{ status_filter }}">
+              {% if s.status == 'archived' %}
+              <input type="hidden" name="action" value="unarchive">
+              <button type="submit" class="text-blue-700 hover:underline">Unarchive</button>
+              {% else %}
+              <input type="hidden" name="action" value="archive">
+              <button type="submit" class="text-red-700 hover:underline">Archive</button>
+              {% endif %}
+            </form>
             <form method="post" action="/sequences/{{ s.id }}/edit" class="inline"
                   onsubmit="return confirm('Delete this sequence? This can\'t be undone.');">
               <input type="hidden" name="action" value="delete">
               <button type="submit" class="text-red-700 hover:underline">Delete</button>
             </form>
-            {% endif %}
           </div>
         </td>
       </tr>

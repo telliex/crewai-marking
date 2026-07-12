@@ -53,12 +53,15 @@ def _campaign(session, **identity):
     ident = {"postal_address": "1 Test St", "from": "s@mail.x.com", "sender_name": "Steven"}
     ident.update(identity)
     c = Campaign(
-        name="c", target_titles=[], seed_companies=[], sequence=_SEQ,
+        name="c", target_titles=[], seed_companies=[],
         sender_identity=ident, warmup_start=datetime(2026, 1, 1, tzinfo=UTC),
     )
     session.add(c)
     session.flush()
     return c
+
+
+_STEPS_BY_TIER = {"B": _SEQ}
 
 
 def _lead(session, c, **kw):
@@ -73,7 +76,7 @@ def _lead(session, c, **kw):
 
 def _mock_ok(monkeypatch):
     monkeypatch.setattr(engine, "send_outreach_email",
-                        lambda l, c, e, s, dry_run: SendResult(ok=True, id=f"msg-{s}", subject="subj"))
+                        lambda l, c, e, s, steps, dry_run: SendResult(ok=True, id=f"msg-{s}", subject="subj"))
 
 
 NOW = datetime(2026, 7, 6, 2, 0, tzinfo=UTC)  # Monday, business hours in Taipei
@@ -82,7 +85,7 @@ NOW = datetime(2026, 7, 6, 2, 0, tzinfo=UTC)  # Monday, business hours in Taipei
 def test_dry_run_sends_nothing_and_does_not_advance(db_session):
     c = _campaign(db_session)
     lead = _lead(db_session, c)
-    s = engine.process_campaign(db_session, c, dry_run=True, now=NOW, ignore_hours=True)
+    s = engine.process_campaign(db_session, c, _STEPS_BY_TIER, dry_run=True, now=NOW, ignore_hours=True)
     assert s.sent == 1 and s.dry_run
     db_session.refresh(lead)
     assert lead.step == 0 and lead.status == "active"  # unchanged
@@ -93,7 +96,7 @@ def test_real_send_advances_step_and_logs(db_session, monkeypatch):
     _mock_ok(monkeypatch)
     c = _campaign(db_session)
     lead = _lead(db_session, c)
-    s = engine.process_campaign(db_session, c, dry_run=False, now=NOW, ignore_hours=True, gap_ms=0)
+    s = engine.process_campaign(db_session, c, _STEPS_BY_TIER, dry_run=False, now=NOW, ignore_hours=True, gap_ms=0)
     assert s.sent == 1
     db_session.refresh(lead)
     assert lead.step == 1 and lead.status == "active"
@@ -109,7 +112,7 @@ def test_final_step_completes(db_session, monkeypatch):
     _mock_ok(monkeypatch)
     c = _campaign(db_session)
     lead = _lead(db_session, c, step=1)  # last step
-    engine.process_campaign(db_session, c, dry_run=False, now=NOW, ignore_hours=True, gap_ms=0)
+    engine.process_campaign(db_session, c, _STEPS_BY_TIER, dry_run=False, now=NOW, ignore_hours=True, gap_ms=0)
     db_session.refresh(lead)
     assert lead.step == 2 and lead.status == "completed" and lead.next_action_at is None
 
@@ -125,7 +128,7 @@ def test_suppressed_lead_flipped(db_session, monkeypatch):
     # would have flipped it already — that path is covered in test_compliance).
     db_session.add(Suppression(email="k@toyota.co.jp", reason="unsubscribe"))
     db_session.commit()
-    s = engine.process_campaign(db_session, c, dry_run=False, now=NOW, ignore_hours=True, gap_ms=0)
+    s = engine.process_campaign(db_session, c, _STEPS_BY_TIER, dry_run=False, now=NOW, ignore_hours=True, gap_ms=0)
     assert s.suppressed == 1 and s.sent == 0
     db_session.refresh(lead)
     assert lead.status == "suppressed"
@@ -136,7 +139,7 @@ def test_business_hours_skip(db_session, monkeypatch):
     c = _campaign(db_session)
     _lead(db_session, c, country="TW")
     sat = datetime(2026, 7, 4, 3, 0, tzinfo=UTC)  # Saturday in Taipei
-    s = engine.process_campaign(db_session, c, dry_run=False, now=sat, gap_ms=0)
+    s = engine.process_campaign(db_session, c, _STEPS_BY_TIER, dry_run=False, now=sat, gap_ms=0)
     assert s.sent == 0 and s.skipped == 1
 
 
@@ -147,17 +150,17 @@ def test_legal_gate_blocks_real_send(db_session, monkeypatch):
     monkeypatch.setattr(settings, "outreach_postal_address", "")
     c = _campaign(db_session, postal_address="")  # no address
     _lead(db_session, c)
-    s = engine.process_campaign(db_session, c, dry_run=False, now=NOW, ignore_hours=True)
+    s = engine.process_campaign(db_session, c, _STEPS_BY_TIER, dry_run=False, now=NOW, ignore_hours=True)
     assert s.sent == 0 and s.blocked and "postal address" in s.blocked
 
 
 def test_retry_cap_parks_lead_as_failed(db_session, monkeypatch):
     monkeypatch.setattr(engine, "send_outreach_email",
-                        lambda l, c, e, s, dry_run: SendResult(ok=False, error="bad address", subject="x"))
+                        lambda l, c, e, s, steps, dry_run: SendResult(ok=False, error="bad address", subject="x"))
     c = _campaign(db_session)
     lead = _lead(db_session, c)
     for _ in range(engine.MAX_SEND_ERRORS):
-        engine.process_campaign(db_session, c, dry_run=False, now=NOW, ignore_hours=True, gap_ms=0)
+        engine.process_campaign(db_session, c, _STEPS_BY_TIER, dry_run=False, now=NOW, ignore_hours=True, gap_ms=0)
     db_session.refresh(lead)
     assert lead.status == "failed"
     assert db_session.query(Event).filter_by(type="error").count() == engine.MAX_SEND_ERRORS
@@ -169,7 +172,7 @@ def test_rolling_24h_cap_enforced(db_session, monkeypatch):
     # 3 due leads, but only allow 2 this run.
     for i in range(3):
         _lead(db_session, c, email=f"a{i}@x.com")
-    s = engine.process_campaign(db_session, c, dry_run=False, now=NOW, ignore_hours=True,
+    s = engine.process_campaign(db_session, c, _STEPS_BY_TIER, dry_run=False, now=NOW, ignore_hours=True,
                                 gap_ms=0, max_this_run=2)
     assert s.sent == 2  # budget capped this run
 
@@ -183,7 +186,7 @@ def test_process_campaign_blocked_when_paused_or_archived(db_session, monkeypatc
     lead = _lead(db_session, c)
     db_session.commit()
 
-    s = engine.process_campaign(db_session, c, dry_run=False, now=NOW, ignore_hours=True, gap_ms=0)
+    s = engine.process_campaign(db_session, c, _STEPS_BY_TIER, dry_run=False, now=NOW, ignore_hours=True, gap_ms=0)
     assert s.blocked == "campaign is paused"
     assert s.sent == 0
     db_session.refresh(lead)
@@ -191,46 +194,52 @@ def test_process_campaign_blocked_when_paused_or_archived(db_session, monkeypatc
 
     c.status = "archived"
     db_session.commit()
-    s2 = engine.process_campaign(db_session, c, dry_run=False, now=NOW, ignore_hours=True, gap_ms=0)
+    s2 = engine.process_campaign(db_session, c, _STEPS_BY_TIER, dry_run=False, now=NOW, ignore_hours=True, gap_ms=0)
     assert s2.blocked == "campaign is archived"
     assert s2.sent == 0
 
-    s3 = engine.process_campaign(db_session, c, dry_run=True, now=NOW, ignore_hours=True)
+    s3 = engine.process_campaign(db_session, c, _STEPS_BY_TIER, dry_run=True, now=NOW, ignore_hours=True)
     assert s3.blocked is None
     assert s3.sent == 1
 
 
-def test_empty_sequence_blocked_and_does_not_complete_leads(db_session):
-    """Regression guard: a brand-new Group has campaign.sequence == [] and its
-    leads start at step=0, so `lead.step >= len(sequence)` (0 >= 0) would be
-    true immediately — process_campaign must short-circuit BEFORE that check,
-    for both dry-run and real-send, so a fresh Group's leads never get
-    silently marked completed before any sequence has actually run."""
+def test_empty_steps_by_tier_blocked_and_does_not_complete_leads(db_session):
+    """Regression guard: a brand-new Task has steps_by_tier == {} and its
+    leads start at step=0, so `lead.step >= len(steps)` (0 >= 0) would be
+    true immediately if steps resolved to []. process_campaign must
+    short-circuit BEFORE that check, for both dry-run and real-send, so a
+    fresh Task's leads never get silently marked completed before any
+    sequence has actually run."""
     c = _campaign(db_session)
-    c.sequence = []
     lead = _lead(db_session, c)
 
-    s = engine.process_campaign(db_session, c, dry_run=True, now=NOW, ignore_hours=True)
-    assert s.blocked == "no sequence"
+    s = engine.process_campaign(db_session, c, {}, dry_run=True, now=NOW, ignore_hours=True)
+    assert s.blocked == "no steps"
     db_session.refresh(lead)
     assert lead.status == "active"
 
-    s2 = engine.process_campaign(db_session, c, dry_run=False, now=NOW, ignore_hours=True, gap_ms=0)
-    assert s2.blocked == "no sequence"
+    s2 = engine.process_campaign(db_session, c, {}, dry_run=False, now=NOW, ignore_hours=True, gap_ms=0)
+    assert s2.blocked == "no steps"
     db_session.refresh(lead)
     assert lead.status == "active"
+
+    # A steps_by_tier dict with only empty-list values (e.g. {"B": []}) is
+    # equally "no steps" — any() over the values must be falsy.
+    s3 = engine.process_campaign(db_session, c, {"B": []}, dry_run=True, now=NOW, ignore_hours=True)
+    assert s3.blocked == "no steps"
 
 
 def test_tier_ordering_a_before_null_before_c(db_session, monkeypatch):
     """A lead's tier orders the send queue: "A" first, NULL tier (counts as
     "B") next, "C" last. With a budget of 1, only the "A" lead sends."""
     _mock_ok(monkeypatch)
+    steps_by_tier = {"A": _SEQ, "B": _SEQ, "C": _SEQ}
     c = _campaign(db_session)
     lead_c = _lead(db_session, c, email="c@x.com", tier="C")
     lead_null = _lead(db_session, c, email="null@x.com", tier=None)
     lead_a = _lead(db_session, c, email="a@x.com", tier="A")
 
-    s = engine.process_campaign(db_session, c, dry_run=False, now=NOW, ignore_hours=True,
+    s = engine.process_campaign(db_session, c, steps_by_tier, dry_run=False, now=NOW, ignore_hours=True,
                                 gap_ms=0, max_this_run=1)
     assert s.sent == 1
     db_session.refresh(lead_a)
@@ -240,13 +249,66 @@ def test_tier_ordering_a_before_null_before_c(db_session, monkeypatch):
     assert lead_null.step == 0       # NULL (as "B") not reached this run
     assert lead_c.step == 0          # "C" not reached this run
 
-    s2 = engine.process_campaign(db_session, c, dry_run=False, now=NOW, ignore_hours=True,
+    s2 = engine.process_campaign(db_session, c, steps_by_tier, dry_run=False, now=NOW, ignore_hours=True,
                                  gap_ms=0, max_this_run=1)
     assert s2.sent == 1
     db_session.refresh(lead_null)
     db_session.refresh(lead_c)
     assert lead_null.step == 1       # NULL/"B" sent before "C"
     assert lead_c.step == 0
+
+
+def test_tier_routing_uses_that_tiers_own_steps(db_session, monkeypatch):
+    """Each lead's tier resolves to ITS assigned sequence, not a shared one —
+    a Tier A lead must get Tier A's steps, not Tier B's."""
+    sent_subjects = []
+
+    def _capture(l, c, e, s, steps, dry_run):
+        sent_subjects.append(steps[s]["subject"])
+        return SendResult(ok=True, id=f"msg-{s}", subject=steps[s]["subject"])
+
+    monkeypatch.setattr(engine, "send_outreach_email", _capture)
+    a_steps = [{"key": "a0", "delay_days": 0, "subject": "A-subject", "body": "a"}]
+    b_steps = [{"key": "b0", "delay_days": 0, "subject": "B-subject", "body": "b"}]
+    steps_by_tier = {"A": a_steps, "B": b_steps}
+    c = _campaign(db_session)
+    _lead(db_session, c, email="a@x.com", tier="A")
+
+    s = engine.process_campaign(db_session, c, steps_by_tier, dry_run=False, now=NOW,
+                                ignore_hours=True, gap_ms=0)
+    assert s.sent == 1
+    assert sent_subjects == ["A-subject"]
+
+
+def test_unassigned_tier_lead_parked_paused_and_counted_skipped(db_session, monkeypatch):
+    """A lead whose (effective) tier has no assigned sequence must be parked
+    as paused and counted as skipped, not silently ignored forever."""
+    _mock_ok(monkeypatch)
+    steps_by_tier = {"A": _SEQ}  # only Tier A assigned
+    c = _campaign(db_session)
+    lead_b = _lead(db_session, c, email="b@x.com", tier="B")
+
+    s = engine.process_campaign(db_session, c, steps_by_tier, dry_run=False, now=NOW,
+                                ignore_hours=True, gap_ms=0)
+    assert s.sent == 0
+    assert s.skipped == 1
+    assert s.details[-1]["result"] == "skipped:no-tier-sequence"
+    db_session.refresh(lead_b)
+    assert lead_b.status == "paused"
+
+
+def test_rolling_24h_cap_shared_across_tiers(db_session, monkeypatch):
+    """The rolling-24h send cap is per-campaign, counted across ALL tiers —
+    not a separate budget per tier."""
+    _mock_ok(monkeypatch)
+    steps_by_tier = {"A": _SEQ, "C": _SEQ}
+    c = _campaign(db_session)
+    _lead(db_session, c, email="a@x.com", tier="A")
+    _lead(db_session, c, email="c@x.com", tier="C")
+
+    s = engine.process_campaign(db_session, c, steps_by_tier, dry_run=False, now=NOW,
+                                ignore_hours=True, gap_ms=0, max_this_run=1)
+    assert s.sent == 1  # one shared budget of 1, not 1 per tier
 
 
 def test_cas_claim_is_single_winner(db_session):

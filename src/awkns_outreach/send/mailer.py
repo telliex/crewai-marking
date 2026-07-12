@@ -6,8 +6,9 @@ Port of yoh's send.ts. Deliverability-first: plain, hand-typed-looking markup
 and a Reply-To to a monitored inbox. Designed "newsletter" HTML lands in
 Promotions/Spam; this doesn't.
 
-Copy is TEMPLATED per campaign (campaign.sequence). The only AI-generated part is
-each lead's `angle`, injected via the {angle} placeholder.
+Copy is TEMPLATED per step (a Task's per-tier `steps_by_tier` snapshot, resolved
+by the caller and passed in as `steps`). The only AI-generated part is each
+lead's `angle`, injected via the {angle} placeholder.
 
 `send_outreach_email`'s signature and `SendResult` contract are unchanged by the
 Gmail mailbox feature — sequencer/engine.py dispatches through this one function
@@ -230,10 +231,9 @@ def _render_email(
 
 def render_step(
     lead: Lead, campaign: Campaign, step_index: int, email: str,
-    identity: Optional[Identity] = None,
+    identity: Optional[Identity] = None, *, steps: list[dict],
 ) -> RenderedEmail:
     ident = identity or resolve_identity(campaign.sender_identity)
-    steps = campaign.sequence or []
     if step_index >= len(steps):
         raise IndexError(f"No sequence step at index {step_index}")
     step = steps[step_index]
@@ -352,10 +352,11 @@ def _send_via_gmail(
 
 
 def send_outreach_email(
-    lead: Lead, campaign: Campaign, email: str, step_index: int, dry_run: bool = True,
+    lead: Lead, campaign: Campaign, email: str, step_index: int, steps: list[dict],
+    *, dry_run: bool = True,
 ) -> SendResult:
     ident = resolve_identity(campaign.sender_identity)
-    rendered = render_step(lead, campaign, step_index, email, ident)
+    rendered = render_step(lead, campaign, step_index, email, ident, steps=steps)
     if dry_run:
         return SendResult(ok=True, id="dry-run", subject=rendered.subject)
 

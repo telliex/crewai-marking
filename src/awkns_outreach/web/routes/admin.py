@@ -14,7 +14,7 @@ from sqlalchemy.orm import Session
 from awkns_outreach.apollo.client import domain_from_website
 from awkns_outreach.apollo.enrich import enrich_campaign
 from awkns_outreach.apollo.seed import SEED_FIELDS, parse_seed_companies
-from awkns_outreach.db.models import Campaign, Lead, MailSequence, Mailbox, Suppression
+from awkns_outreach.db.models import Campaign, Lead, Mailbox, Suppression, Task
 from awkns_outreach.sequencer import process_campaign
 from awkns_outreach.web.deps import get_db, require_admin, templates
 from awkns_outreach.web.stats import campaign_stats
@@ -33,11 +33,11 @@ _STATUS_TRANSITIONS = {
     "pause": {"active": "paused"},
     "resume": {"paused": "active"},
 }
-# Mirror a campaign-status change onto its own running/paused MailSequence
-# (if any) so the two status fields don't silently drift when an operator
-# uses the dashboard's own pause/resume/archive buttons instead of the Tasks
-# page: action -> (sequence statuses to match on, new sequence status).
-_SEQUENCE_MIRROR = {
+# Mirror a campaign-status change onto its own running/paused Task (if any)
+# so the two status fields don't silently drift when an operator uses the
+# dashboard's own pause/resume/archive buttons instead of the Tasks page:
+# action -> (task statuses to match on, new task status).
+_TASK_MIRROR = {
     "pause": (("running",), "paused"),
     "resume": (("paused",), "running"),
     "archive": (("running", "paused"), "stopped"),
@@ -129,7 +129,6 @@ def create_campaign(
         target_titles=_split_lines(titles),
         seed_companies=seed_companies,
         angle_prompt=angle_prompt.strip() or None,
-        sequence=[],
         sender_identity={},
     )
     db.add(c)
@@ -166,16 +165,16 @@ def change_campaign_status(
         msg = f"Campaign “{c.name}” is already {c.status}."
     else:
         c.status = new_status
-        mirror = _SEQUENCE_MIRROR.get(action)
+        mirror = _TASK_MIRROR.get(action)
         if mirror:
             from_statuses, to_status = mirror
-            seq = db.scalar(
-                select(MailSequence).where(
-                    MailSequence.campaign_id == c.id, MailSequence.status.in_(from_statuses),
+            task = db.scalar(
+                select(Task).where(
+                    Task.campaign_id == c.id, Task.status.in_(from_statuses),
                 )
             )
-            if seq is not None:
-                seq.status = to_status
+            if task is not None:
+                task.status = to_status
         db.commit()
         msg = f"Campaign “{c.name}” {action}d."
     return RedirectResponse(f"/?status={status}&page={page}&msg={msg}", status_code=303)
@@ -329,7 +328,12 @@ def run_sequencer(
 ):
     c = _get_campaign(db, campaign_id)
     dry = not bool(send)
-    s = process_campaign(db, c, dry_run=dry, max_this_run=max_this_run, gap_ms=0)
+    task = db.scalar(select(Task).where(Task.campaign_id == c.id, Task.status == "running"))
+    if task is None:
+        return RedirectResponse(
+            f"/campaigns/{c.id}?msg=Blocked: no running task for this campaign.", status_code=303,
+        )
+    s = process_campaign(db, c, task.steps_by_tier, dry_run=dry, max_this_run=max_this_run, gap_ms=0)
     mode = "DRY-RUN" if dry else "SENT"
     if s.blocked:
         msg = f"Blocked: {s.blocked}"

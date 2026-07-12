@@ -3,26 +3,30 @@
 {% block content %}
 <div class="flex items-center justify-between mb-4">
   <h1 class="text-lg font-semibold">Tasks</h1>
+  <a href="/tasks/new" class="rounded bg-slate-900 text-white text-sm px-3 py-1.5">+ New task</a>
 </div>
 
 <p class="text-xs text-slate-500 mb-2">
-  Schedule, start, pause, resume, or stop a sequence's send against its group's leads.
+  A task picks a campaign, assigns a sequence per lead tier, and owns the send lifecycle: schedule,
+  start, pause, resume, or stop.
 </p>
 <p class="text-xs text-amber-700 mb-4">
-  Scheduled sequences start on the next scheduler tick after their scheduled time — this requires the background scheduler process to be running.
+  Scheduled tasks start on the next scheduler tick after their scheduled time — this requires the background scheduler process to be running.
 </p>
 
 {% if not rows %}
-<p class="text-slate-500 text-sm">No sequences yet.</p>
+<p class="text-slate-500 text-sm">No tasks yet.</p>
 {% else %}
 <div class="overflow-x-auto rounded border bg-white">
   <table class="w-full text-sm">
     <thead class="bg-slate-100 text-slate-500 text-left">
       <tr>
         <th class="px-3 py-2">Name</th>
-        <th class="px-3 py-2">Group</th>
+        <th class="px-3 py-2">Campaign</th>
+        <th class="px-3 py-2">Tiers</th>
         <th class="px-3 py-2">Status</th>
         <th class="px-3 py-2">Scheduled start</th>
+        <th class="px-3 py-2">Ends</th>
         <th class="px-3 py-2">Started</th>
         <th class="px-3 py-2">Completed</th>
         <th class="px-3 py-2">Actions</th>
@@ -30,86 +34,103 @@
     </thead>
     <tbody>
       {% for row in rows %}
-      {% set s = row.s %}
-      {% set editable = s.status in editable_statuses %}
+      {% set t = row.t %}
+      {% set editable = t.status in editable_statuses %}
       <tr class="border-t">
         <td class="px-3 py-2">
           {% if editable %}
-          <a href="/sequences/{{ s.id }}/edit" class="text-blue-700 hover:underline">{{ s.name }}</a>
+          <a href="/tasks/{{ t.id }}/edit" class="text-blue-700 hover:underline">{{ t.name }}</a>
           {% else %}
-          {{ s.name }}
+          {{ t.name }}
           {% endif %}
         </td>
         <td class="px-3 py-2 text-slate-500">{{ row.campaign_name }}</td>
+        <td class="px-3 py-2 text-slate-500">
+          {% for tier, seq_name in row.assignments %}
+          <span class="rounded px-1.5 py-0.5 text-xs bg-slate-100 mr-1" title="{{ seq_name }}">{{ tier }}</span>
+          {% else %}
+          —
+          {% endfor %}
+        </td>
         <td class="px-3 py-2">
-          {% if s.status == 'draft' %}
+          {% if t.status == 'draft' %}
           <span class="rounded px-1.5 py-0.5 text-xs bg-slate-200 text-slate-600">draft</span>
-          {% elif s.status == 'scheduled' %}
+          {% elif t.status == 'scheduled' %}
           <span class="rounded px-1.5 py-0.5 text-xs bg-blue-100 text-blue-800">scheduled</span>
-          {% elif s.status == 'running' %}
+          {% elif t.status == 'running' %}
           <span class="rounded px-1.5 py-0.5 text-xs bg-green-100 text-green-800">running</span>
-          {% if s.campaign.status != 'active' %}
-          <span class="rounded px-1.5 py-0.5 text-xs bg-red-100 text-red-800" title="Sequence is running but its campaign isn't active — likely manual dashboard drift.">
-            &#9888; drift: campaign {{ s.campaign.status }}
+          {% if t.campaign.status != 'active' %}
+          <span class="rounded px-1.5 py-0.5 text-xs bg-red-100 text-red-800" title="Task is running but its campaign isn't active — likely manual dashboard drift.">
+            &#9888; drift: campaign {{ t.campaign.status }}
           </span>
           {% endif %}
-          {% elif s.status == 'paused' %}
+          {% elif t.status == 'paused' %}
           <span class="rounded px-1.5 py-0.5 text-xs bg-amber-100 text-amber-800">paused</span>
-          {% elif s.status == 'stopped' %}
+          {% elif t.status == 'stopped' %}
           <span class="rounded px-1.5 py-0.5 text-xs bg-red-100 text-red-800">stopped</span>
           {% else %}
           <span class="rounded px-1.5 py-0.5 text-xs bg-slate-200 text-slate-600">completed</span>
           {% endif %}
         </td>
         <td class="px-3 py-2 text-slate-500">
-          {{ s.scheduled_start_at.strftime('%Y-%m-%d %H:%M UTC') if s.scheduled_start_at else "—" }}
+          {{ t.scheduled_start_at.strftime('%Y-%m-%d %H:%M UTC') if t.scheduled_start_at else "—" }}
         </td>
         <td class="px-3 py-2 text-slate-500">
-          {{ s.started_at.strftime('%Y-%m-%d %H:%M UTC') if s.started_at else "—" }}
+          {{ t.end_at.strftime('%Y-%m-%d %H:%M UTC') if t.end_at else "—" }}
         </td>
         <td class="px-3 py-2 text-slate-500">
-          {{ s.completed_at.strftime('%Y-%m-%d %H:%M UTC') if s.completed_at else "—" }}
+          {{ t.started_at.strftime('%Y-%m-%d %H:%M UTC') if t.started_at else "—" }}
+        </td>
+        <td class="px-3 py-2 text-slate-500">
+          {{ t.completed_at.strftime('%Y-%m-%d %H:%M UTC') if t.completed_at else "—" }}
         </td>
         <td class="px-3 py-2">
           <div class="flex items-center gap-2 flex-wrap">
-            {% if s.status == 'draft' %}
-            <form method="post" action="/sequences/{{ s.id }}/schedule" class="inline-flex items-center gap-1">
+            {% if t.status == 'draft' %}
+            <form method="post" action="/tasks/{{ t.id }}/schedule" class="inline-flex items-center gap-1 flex-wrap">
               <label class="text-xs text-slate-500">
+                Start
                 <input type="datetime-local" name="scheduled_start_at" required
+                       class="border rounded px-1.5 py-0.5 text-xs">
+                <span class="block text-[10px]">(Asia/Taipei time)</span>
+              </label>
+              <label class="text-xs text-slate-500">
+                End (optional)
+                <input type="datetime-local" name="end_at"
                        class="border rounded px-1.5 py-0.5 text-xs">
                 <span class="block text-[10px]">(Asia/Taipei time)</span>
               </label>
               <button type="submit" class="text-blue-700 hover:underline">Schedule</button>
             </form>
-            <form method="post" action="/sequences/{{ s.id }}/lifecycle" class="inline">
+            <form method="post" action="/tasks/{{ t.id }}/lifecycle" class="inline">
               <input type="hidden" name="action" value="start">
               <button type="submit" class="text-green-700 hover:underline">Start now</button>
             </form>
-            {% elif s.status == 'scheduled' %}
-            <form method="post" action="/sequences/{{ s.id }}/unschedule" class="inline">
+            {% elif t.status == 'scheduled' %}
+            <form method="post" action="/tasks/{{ t.id }}/unschedule" class="inline">
               <button type="submit" class="text-slate-700 hover:underline">Unschedule</button>
             </form>
-            <form method="post" action="/sequences/{{ s.id }}/lifecycle" class="inline">
+            <form method="post" action="/tasks/{{ t.id }}/lifecycle" class="inline">
               <input type="hidden" name="action" value="start">
               <button type="submit" class="text-green-700 hover:underline">Start now</button>
             </form>
-            {% elif s.status == 'running' %}
-            <form method="post" action="/sequences/{{ s.id }}/lifecycle" class="inline">
+            {% elif t.status == 'running' %}
+            <form method="post" action="/tasks/{{ t.id }}/lifecycle" class="inline">
               <input type="hidden" name="action" value="pause">
               <button type="submit" class="text-amber-700 hover:underline">Pause</button>
             </form>
-            <form method="post" action="/sequences/{{ s.id }}/lifecycle" class="inline"
-                  onsubmit="return confirm('Stop this sequence? This can\'t be resumed.');">
+            <form method="post" action="/tasks/{{ t.id }}/lifecycle" class="inline"
+                  onsubmit="return confirm('Stop this task? This can\'t be resumed.');">
               <input type="hidden" name="action" value="stop">
               <button type="submit" class="text-red-700 hover:underline">Stop</button>
             </form>
-            {% elif s.status == 'paused' %}
-            <form method="post" action="/sequences/{{ s.id }}/lifecycle" class="inline">
+            {% elif t.status == 'paused' %}
+            <form method="post" action="/tasks/{{ t.id }}/lifecycle" class="inline">
               <input type="hidden" name="action" value="resume">
               <button type="submit" class="text-green-700 hover:underline">Resume</button>
             </form>
-            <form method="post" action="/sequences/{{ s.id }}/lifecycle" class="inline"
-                  onsubmit="return confirm('Stop this sequence? This can\'t be resumed.');">
+            <form method="post" action="/tasks/{{ t.id }}/lifecycle" class="inline"
+                  onsubmit="return confirm('Stop this task? This can\'t be resumed.');">
               <input type="hidden" name="action" value="stop">
               <button type="submit" class="text-red-700 hover:underline">Stop</button>
             </form>

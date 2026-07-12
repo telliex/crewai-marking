@@ -35,7 +35,7 @@ def _mailbox(**kw):
 
 
 def _campaign(mailbox, **kw):
-    base = dict(name="c", target_titles=[], seed_companies=[], sequence=_SEQUENCE,
+    base = dict(name="c", target_titles=[], seed_companies=[],
                 sender_identity={"sender_name": "Steven", "postal_address": "1 Test St"})
     base.update(kw)
     c = Campaign(**base)
@@ -66,7 +66,7 @@ def test_send_posts_to_gmail_not_resend():
     )
     mb = _mailbox()
     c = _campaign(mb)
-    res = send_outreach_email(_lead(), c, "k@toyota.co.jp", 0, dry_run=False)
+    res = send_outreach_email(_lead(), c, "k@toyota.co.jp", 0, _SEQUENCE, dry_run=False)
     assert res.ok and res.id == "gmail-1"
     assert gmail_route.called
     assert not resend_route.called
@@ -79,7 +79,7 @@ def test_raw_mime_has_unsubscribe_headers_and_both_parts():
     )
     mb = _mailbox()
     c = _campaign(mb)
-    res = send_outreach_email(_lead(), c, "k@toyota.co.jp", 0, dry_run=False)
+    res = send_outreach_email(_lead(), c, "k@toyota.co.jp", 0, _SEQUENCE, dry_run=False)
     assert res.ok
     raw = _decode_raw(gmail_route.calls.last.request)
     assert b"List-Unsubscribe:" in raw
@@ -96,7 +96,7 @@ def test_step0_no_thread_id_step1_has_thread_and_in_reply_to():
     c = _campaign(mb)
     lead = _lead()
 
-    res0 = send_outreach_email(lead, c, "k@toyota.co.jp", 0, dry_run=False)
+    res0 = send_outreach_email(lead, c, "k@toyota.co.jp", 0, _SEQUENCE, dry_run=False)
     assert res0.ok
     body0 = json.loads(gmail_route.calls.last.request.content)
     assert "threadId" not in body0
@@ -104,7 +104,7 @@ def test_step0_no_thread_id_step1_has_thread_and_in_reply_to():
     assert lead.last_message_id  # set by the mailer for follow-up threading
 
     prior_message_id = lead.last_message_id
-    res1 = send_outreach_email(lead, c, "k@toyota.co.jp", 1, dry_run=False)
+    res1 = send_outreach_email(lead, c, "k@toyota.co.jp", 1, _SEQUENCE, dry_run=False)
     assert res1.ok
     body1 = json.loads(gmail_route.calls.last.request.content)
     assert body1.get("threadId") == "thread-1"
@@ -120,7 +120,7 @@ def test_unhealthy_mailbox_fast_fails_zero_network():
     for status in ("needs_reconnect", "disconnected"):
         mb = _mailbox(status=status)
         c = _campaign(mb)
-        res = send_outreach_email(_lead(), c, "k@toyota.co.jp", 0, dry_run=False)
+        res = send_outreach_email(_lead(), c, "k@toyota.co.jp", 0, _SEQUENCE, dry_run=False)
         assert not res.ok and res.error == f"mailbox {status}"
         assert len(respx.calls) == 0
 
@@ -137,7 +137,7 @@ def test_expired_token_triggers_refresh_before_send():
     )
     mb = _mailbox(access_token="stale", token_expiry=datetime.now(timezone.utc) - timedelta(seconds=5))
     c = _campaign(mb)
-    res = send_outreach_email(_lead(), c, "k@toyota.co.jp", 0, dry_run=False)
+    res = send_outreach_email(_lead(), c, "k@toyota.co.jp", 0, _SEQUENCE, dry_run=False)
     assert res.ok
     assert token_route.called
     assert mb.access_token == "fresh-token"
@@ -148,7 +148,7 @@ def test_expired_token_triggers_refresh_before_send():
 def test_dry_run_gmail_mailbox_sends_nothing():
     mb = _mailbox()
     c = _campaign(mb)
-    res = send_outreach_email(_lead(), c, "k@toyota.co.jp", 0, dry_run=True)
+    res = send_outreach_email(_lead(), c, "k@toyota.co.jp", 0, _SEQUENCE, dry_run=True)
     assert res.ok and res.id == "dry-run"
     assert len(respx.calls) == 0
 
@@ -175,11 +175,12 @@ def test_gmail_send_includes_attachment_from_disk(tmp_path, monkeypatch):
         return_value=httpx.Response(200, json={"id": "gmail-1", "threadId": "thread-1"})
     )
     mb = _mailbox()
-    c = _campaign(mb, sequence=[{
+    c = _campaign(mb)
+    steps = [{
         "key": "intro", "delay_days": 0, "subject": "s", "body": "b",
         "attachments": [{"filename": "proposal.pdf", "stored_name": "abc123.pdf", "content_type": "application/pdf"}],
-    }])
-    res = send_outreach_email(_lead(), c, "k@toyota.co.jp", 0, dry_run=False)
+    }]
+    res = send_outreach_email(_lead(), c, "k@toyota.co.jp", 0, steps, dry_run=False)
     assert res.ok
     raw = _decode_raw(gmail_route.calls.last.request)
     assert b'filename="proposal.pdf"' in raw
@@ -195,11 +196,12 @@ def test_gmail_send_skips_missing_attachment_file(tmp_path, monkeypatch):
         return_value=httpx.Response(200, json={"id": "gmail-1", "threadId": "thread-1"})
     )
     mb = _mailbox()
-    c = _campaign(mb, sequence=[{
+    c = _campaign(mb)
+    steps = [{
         "key": "intro", "delay_days": 0, "subject": "s", "body": "b",
         "attachments": [{"filename": "gone.pdf", "stored_name": "missing.pdf", "content_type": "application/pdf"}],
-    }])
-    res = send_outreach_email(_lead(), c, "k@toyota.co.jp", 0, dry_run=False)
+    }]
+    res = send_outreach_email(_lead(), c, "k@toyota.co.jp", 0, steps, dry_run=False)
     assert res.ok  # send still succeeds, just without the missing attachment
     raw = _decode_raw(gmail_route.calls.last.request)
     assert b"gone.pdf" not in raw

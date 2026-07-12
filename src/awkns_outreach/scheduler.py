@@ -23,15 +23,18 @@ log = logging.getLogger("awkns_outreach.scheduler")
 def tick(*, send: bool, max_per_tick: int) -> None:
     now = datetime.now(timezone.utc)
     with session_scope() as session:
-        started = lifecycle.start_due_sequences(session, now)
+        started = lifecycle.start_due_tasks(session, now)
+        expired = lifecycle.stop_expired_tasks(session, now)
         results = run_all_campaigns(
             session, dry_run=not send, max_this_run=max_per_tick, gap_ms=0, now=now
         )
-        completed = lifecycle.complete_finished_sequences(session, now)
-    for seq in started:
-        log.info("[sequences] started: %s", seq.name)
-    for seq in completed:
-        log.info("[sequences] completed: %s", seq.name)
+        completed = lifecycle.complete_finished_tasks(session, now)
+    for task in started:
+        log.info("[tasks] started: %s", task.name)
+    for task in expired:
+        log.info("[tasks] stopped (end_at expired): %s", task.name)
+    for task in completed:
+        log.info("[tasks] completed: %s", task.name)
     for campaign, s in results:
         if s.blocked:
             log.warning("[%s] blocked: %s", campaign.name, s.blocked)

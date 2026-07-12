@@ -57,6 +57,7 @@ def _utcnow() -> datetime:
 def process_campaign(
     session: Session,
     campaign: Campaign,
+    steps_by_tier: dict[str, list[dict[str, Any]]],
     *,
     dry_run: bool = True,
     max_this_run: int = 5,
@@ -66,11 +67,11 @@ def process_campaign(
 ) -> RunSummary:
     now = now or _utcnow()
     max_this_run = max(0, max_this_run)
-    sequence = campaign.sequence or []
+    steps_by_tier = steps_by_tier or {}
     summary = RunSummary(dry_run=dry_run)
 
-    if not sequence:
-        summary.blocked = "no sequence"
+    if not any(steps_by_tier.values()):
+        summary.blocked = "no steps"
         return summary
 
     if not dry_run:
@@ -134,8 +135,19 @@ def process_campaign(
         summary.considered += 1
         email = lead.email
 
+        # No sequence assigned to this lead's tier (partial assignment, or
+        # the lead's tier changed after the task started)? Park it rather
+        # than sending nothing forever from the active pool.
+        steps = steps_by_tier.get(lead.tier or "B")
+        if not steps:
+            lead.status = "paused"
+            session.commit()
+            summary.skipped += 1
+            summary.details.append({"email": email, "result": "skipped:no-tier-sequence"})
+            continue
+
         # Sequence finished?
-        if lead.step >= len(sequence):
+        if lead.step >= len(steps):
             lead.status = "completed"
             session.commit()
             summary.completed += 1
@@ -182,7 +194,7 @@ def process_campaign(
             if gap > 0:
                 time.sleep(gap / 1000.0)
 
-        res = send_outreach_email(lead, campaign, email, lead.step, dry_run=dry_run)
+        res = send_outreach_email(lead, campaign, email, lead.step, steps, dry_run=dry_run)
 
         if res.ok:
             real_send_done = True
@@ -194,8 +206,8 @@ def process_campaign(
             })
             if not dry_run:
                 next_step = lead.step + 1
-                done = next_step >= len(sequence)
-                next_delay = None if done else sequence[next_step].get("delay_days", 0)
+                done = next_step >= len(steps)
+                next_delay = None if done else steps[next_step].get("delay_days", 0)
                 session.add(Event(lead_id=lead.id, type="sent", step=lead.step,
                                   detail=res.id, subject=res.subject))
                 lead.step = next_step

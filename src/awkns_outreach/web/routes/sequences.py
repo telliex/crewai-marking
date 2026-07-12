@@ -1,28 +1,26 @@
-"""Standalone mail sequence CRUD (Apollo "New Sequence" page): list, create,
-edit, delete. Each sequence targets one existing Campaign ("Group") and
-snapshots an ordered list of email steps — see `MailSequence` in db/models.py.
+"""Standalone mail sequence content library (Apollo "New Sequence" page):
+list, create, edit, archive/unarchive, delete. Content-only, like
+EmailTemplate but with an ordered list of steps instead of one email — see
+`MailSequence` in db/models.py. A `Task` assigns a sequence per lead tier to
+a Campaign and owns the actual send lifecycle (see web/routes/tasks.py).
 
 The editor page gives each step its own rich Quill editor, live HTMX
-preview, and test-send widget (Task 3b), reusing the same
+preview, and test-send widget, reusing the same
 `_template_preview_fragment.html` / `_template_test_send_fragment.html`
 fragments and `_render_preview`/`_connected_mailboxes` helpers as the
-single-template editor. Lifecycle actions (schedule/start/pause/stop) land
-in Task 4 — not built here.
+single-template editor.
 """
 from __future__ import annotations
 
 import json
-from datetime import datetime, timezone
 from typing import Optional
-from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from awkns_outreach.db.models import Campaign, EmailTemplate, MailSequence
-from awkns_outreach.sequencer import lifecycle
+from awkns_outreach.db.models import EmailTemplate, MailSequence, Task
 from awkns_outreach.web.deps import get_db, require_admin, templates
 from awkns_outreach.web.routes.admin import SEQUENCE_PLACEHOLDERS
 from awkns_outreach.web.routes.templates_lib import (
@@ -34,21 +32,14 @@ from awkns_outreach.web.routes.templates_lib import (
 
 router = APIRouter(dependencies=[Depends(require_admin)])
 
-# Actions dispatched by POST /sequences/{id}/lifecycle — mirrors admin.py's
-# _STATUS_TRANSITIONS-style whitelist, but as functions (each transition has
-# non-trivial side effects: snapshotting steps, resetting lead cursors, etc).
-_LIFECYCLE_ACTIONS = {
-    "pause": lambda db, seq, now: lifecycle.pause_sequence(db, seq),
-    "resume": lambda db, seq, now: lifecycle.resume_sequence(db, seq),
-    "stop": lambda db, seq, now: lifecycle.stop_sequence(db, seq),
-    "start": lambda db, seq, now: lifecycle.start_sequence(db, seq, now),
+_STATUS_FILTERS = ("active", "archived", "all")
+_STATUS_TRANSITIONS = {
+    "archive": {"active": "archived"},
+    "unarchive": {"archived": "active"},
 }
-
-_STATUS_FILTERS = ("draft", "scheduled", "running", "paused", "stopped", "completed", "all")
-# Only pre-start sequences can still have their name/group/steps changed.
-_EDITABLE_STATUSES = ("draft", "scheduled")
-# Anything that isn't actively running/paused can be removed outright.
-_DELETABLE_STATUSES = ("draft", "scheduled", "stopped", "completed")
+# Statuses in which a Task's sequence assignment blocks that sequence from
+# being deleted — anything actively in play or queued to be.
+_ASSIGNMENT_BLOCKING_STATUSES = ("draft", "scheduled", "running", "paused")
 
 
 def _get_sequence(db: Session, seq_id: str) -> MailSequence:
@@ -58,21 +49,27 @@ def _get_sequence(db: Session, seq_id: str) -> MailSequence:
     return seq
 
 
-def _edit_guard(seq: MailSequence) -> Optional[RedirectResponse]:
-    """Server-side backup for the disabled Edit link: a sequence that has
-    already started (running/paused/stopped/completed) can't be edited."""
-    if seq.status not in _EDITABLE_STATUSES:
+def _archived_edit_guard(seq: MailSequence) -> Optional[RedirectResponse]:
+    """Server-side backup for the disabled Edit link: an archived sequence
+    can't be edited (both GET and POST) until unarchived."""
+    if seq.status == "archived":
         return RedirectResponse(
-            f"/sequences?msg=Sequence can't be edited while {seq.status}.",
+            "/sequences?msg=Archived sequences can't be edited — unarchive first.",
             status_code=303,
         )
     return None
 
 
-def _campaign_groups(db: Session) -> list[Campaign]:
-    return db.scalars(
-        select(Campaign).where(Campaign.status.in_(["active", "paused"])).order_by(Campaign.name)
+def _assigning_task(db: Session, seq_id: str) -> Optional[Task]:
+    """The first in-play Task (draft/scheduled/running/paused) whose per-tier
+    assignment references this sequence, if any — used to block delete."""
+    tasks = db.scalars(
+        select(Task).where(Task.status.in_(_ASSIGNMENT_BLOCKING_STATUSES))
     ).all()
+    for task in tasks:
+        if seq_id in (task.sequences or {}).values():
+            return task
+    return None
 
 
 def _template_options(db: Session) -> list[dict]:
@@ -136,19 +133,15 @@ def list_sequences(
     request: Request, db: Session = Depends(get_db),
     status: Optional[str] = None, msg: Optional[str] = None,
 ):
-    status_filter = status if status in _STATUS_FILTERS else "all"
+    status_filter = status if status in _STATUS_FILTERS else "active"
     q = select(MailSequence).order_by(MailSequence.created_at.desc())
     if status_filter != "all":
         q = q.where(MailSequence.status == status_filter)
     items = db.scalars(q).all()
-    campaign_names = {c.id: c.name for c in db.scalars(select(Campaign)).all()}
-    rows = [{"s": s, "campaign_name": campaign_names.get(s.campaign_id, "—")} for s in items]
+    rows = [{"s": s} for s in items]
     return templates.TemplateResponse(
         request, "sequence_list.html",
-        {
-            "rows": rows, "status_filter": status_filter, "msg": msg,
-            "editable_statuses": _EDITABLE_STATUSES, "deletable_statuses": _DELETABLE_STATUSES,
-        },
+        {"rows": rows, "status_filter": status_filter, "msg": msg},
     )
 
 
@@ -157,7 +150,7 @@ def new_sequence_form(request: Request, db: Session = Depends(get_db), msg: Opti
     return templates.TemplateResponse(
         request, "mail_sequence_edit.html",
         {
-            "seq": None, "groups": _campaign_groups(db), "template_options": _template_options(db),
+            "seq": None, "template_options": _template_options(db),
             "steps_for_editor": _steps_for_editor([]),
             "mailboxes": _connected_mailboxes(db),
             "placeholders": SEQUENCE_PLACEHOLDERS, "form_action": "/sequences", "msg": msg,
@@ -168,7 +161,6 @@ def new_sequence_form(request: Request, db: Session = Depends(get_db), msg: Opti
 @router.post("/sequences")
 def create_sequence(
     name: str = Form(""),
-    campaign_id: str = Form(""),
     step_key: list[str] = Form(default=[]),
     delay_days: list[str] = Form(default=[]),
     subject: list[str] = Form(default=[]),
@@ -180,11 +172,9 @@ def create_sequence(
     name = name.strip()
     if not name:
         return RedirectResponse("/sequences/new?msg=Name is required.", status_code=303)
-    if not db.get(Campaign, campaign_id):
-        return RedirectResponse("/sequences/new?msg=Select a valid group.", status_code=303)
 
     steps = _build_steps(step_key, delay_days, subject, body, attachments, source_template_id)
-    seq = MailSequence(name=name, campaign_id=campaign_id, steps=steps)
+    seq = MailSequence(name=name, steps=steps)
     db.add(seq)
     db.commit()
     return RedirectResponse("/sequences?msg=Sequence created.", status_code=303)
@@ -195,13 +185,13 @@ def edit_sequence_form(
     seq_id: str, request: Request, db: Session = Depends(get_db), msg: Optional[str] = None,
 ):
     seq = _get_sequence(db, seq_id)
-    blocked = _edit_guard(seq)
+    blocked = _archived_edit_guard(seq)
     if blocked:
         return blocked
     return templates.TemplateResponse(
         request, "mail_sequence_edit.html",
         {
-            "seq": seq, "groups": _campaign_groups(db), "template_options": _template_options(db),
+            "seq": seq, "template_options": _template_options(db),
             "steps_for_editor": _steps_for_editor(seq.steps or []),
             "mailboxes": _connected_mailboxes(db),
             "placeholders": SEQUENCE_PLACEHOLDERS, "form_action": f"/sequences/{seq.id}/edit", "msg": msg,
@@ -214,7 +204,6 @@ def update_sequence(
     seq_id: str,
     action: str = Form("save"),
     name: str = Form(""),
-    campaign_id: str = Form(""),
     step_key: list[str] = Form(default=[]),
     delay_days: list[str] = Form(default=[]),
     subject: list[str] = Form(default=[]),
@@ -226,9 +215,11 @@ def update_sequence(
     seq = _get_sequence(db, seq_id)
 
     if action == "delete":
-        if seq.status not in _DELETABLE_STATUSES:
+        blocking_task = _assigning_task(db, seq.id)
+        if blocking_task is not None:
             return RedirectResponse(
-                f"/sequences?msg=Sequence can't be deleted while {seq.status}.", status_code=303,
+                f"/sequences?msg=Sequence is assigned to task “{blocking_task.name}” — unassign it first.",
+                status_code=303,
             )
         db.delete(seq)
         db.commit()
@@ -237,84 +228,34 @@ def update_sequence(
     if action != "save":
         raise HTTPException(400, f"Unknown action: {action}")
 
-    blocked = _edit_guard(seq)
+    blocked = _archived_edit_guard(seq)
     if blocked:
         return blocked
 
     name = name.strip()
     if not name:
         return RedirectResponse(f"/sequences/{seq.id}/edit?msg=Name is required.", status_code=303)
-    if not db.get(Campaign, campaign_id):
-        return RedirectResponse(f"/sequences/{seq.id}/edit?msg=Select a valid group.", status_code=303)
-
-    # A `scheduled` sequence already occupies its current Group's one-active
-    # slot — reassigning it to a different Group that already has an active
-    # sequence would silently violate that invariant (see final-review fix
-    # brief, Important #1). Re-check whenever the Group is actually changing.
-    if campaign_id != seq.campaign_id:
-        conflict = lifecycle.active_conflict(db, campaign_id, exclude_id=seq.id)
-        if conflict is not None:
-            return RedirectResponse(
-                f"/sequences/{seq.id}/edit?msg={conflict.name} is already {conflict.status} for this group.",
-                status_code=303,
-            )
 
     seq.name = name
-    seq.campaign_id = campaign_id
     seq.steps = _build_steps(step_key, delay_days, subject, body, attachments, source_template_id)
     db.commit()
     return RedirectResponse(f"/sequences/{seq.id}/edit?msg=Sequence saved.", status_code=303)
 
 
-@router.get("/tasks", response_class=HTMLResponse)
-def list_tasks(request: Request, db: Session = Depends(get_db), msg: Optional[str] = None):
-    """Tasks page: every MailSequence with its lifecycle controls. Newest
-    first (same campaign_names dict-lookup pattern as list_sequences)."""
-    items = db.scalars(select(MailSequence).order_by(MailSequence.created_at.desc())).all()
-    campaign_names = {c.id: c.name for c in db.scalars(select(Campaign)).all()}
-    rows = [{"s": s, "campaign_name": campaign_names.get(s.campaign_id, "—")} for s in items]
-    return templates.TemplateResponse(
-        request, "tasks.html",
-        {"rows": rows, "editable_statuses": _EDITABLE_STATUSES, "msg": msg},
-    )
-
-
-@router.post("/sequences/{seq_id}/schedule")
-def schedule_sequence_route(
-    seq_id: str,
-    scheduled_start_at: str = Form(...),
+@router.post("/sequences/{seq_id}/status")
+def change_sequence_status(
+    seq_id: str, action: str = Form(...), status: str = Form("active"),
     db: Session = Depends(get_db),
 ):
     seq = _get_sequence(db, seq_id)
-    try:
-        when = (
-            datetime.fromisoformat(scheduled_start_at)
-            .replace(tzinfo=ZoneInfo("Asia/Taipei"))
-            .astimezone(timezone.utc)
-        )
-    except ValueError:
-        return RedirectResponse("/tasks?msg=Invalid date/time.", status_code=303)
-    _ok, msg = lifecycle.schedule_sequence(db, seq, when)
-    return RedirectResponse(f"/tasks?msg={msg}", status_code=303)
-
-
-@router.post("/sequences/{seq_id}/unschedule")
-def unschedule_sequence_route(seq_id: str, db: Session = Depends(get_db)):
-    seq = _get_sequence(db, seq_id)
-    _ok, msg = lifecycle.unschedule_sequence(db, seq)
-    return RedirectResponse(f"/tasks?msg={msg}", status_code=303)
-
-
-@router.post("/sequences/{seq_id}/lifecycle")
-def lifecycle_action_route(
-    seq_id: str,
-    action: str = Form(...),
-    db: Session = Depends(get_db),
-):
-    seq = _get_sequence(db, seq_id)
-    handler = _LIFECYCLE_ACTIONS.get(action)
-    if handler is None:
+    transitions = _STATUS_TRANSITIONS.get(action)
+    if transitions is None:
         raise HTTPException(400, f"Unknown action: {action}")
-    now = datetime.now(timezone.utc)
-    _ok, msg = handler(db, seq, now)
-    return RedirectResponse(f"/tasks?msg={msg}", status_code=303)
+    new_status = transitions.get(seq.status)
+    if new_status is None:
+        msg = f'Sequence "{seq.name}" is already {seq.status}.'
+    else:
+        seq.status = new_status
+        db.commit()
+        msg = f'Sequence "{seq.name}" {"archived" if new_status == "archived" else "unarchived"}.'
+    return RedirectResponse(f"/sequences?status={status}&msg={msg}", status_code=303)
