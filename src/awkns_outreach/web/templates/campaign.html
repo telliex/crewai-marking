@@ -57,15 +57,31 @@
     <label class="text-xs ml-2"><input name="send" type="checkbox" value="1"> send for real</label>
     <button class="ml-2 rounded bg-slate-900 text-white text-xs px-2 py-1">Run</button>
   </form>
+
+  <form method="post" action="/campaigns/{{ c.id }}/classify" class="rounded border bg-white p-3">
+    <div class="text-xs font-medium text-slate-500 mb-2">AI classify</div>
+    <label class="text-xs">Limit <input name="limit" type="number" value="500" class="w-16 border rounded px-1 py-0.5"></label>
+    <label class="text-xs ml-2"><input name="reclassify" type="checkbox" value="1"> reclassify all (overwrites existing tiers)</label>
+    <button class="ml-2 rounded bg-slate-900 text-white text-xs px-2 py-1">AI classify</button>
+    <p class="text-xs text-slate-400 mt-1">Unclassified leads are treated as Tier B when sending.</p>
+  </form>
 </div>
 
 <h2 class="text-sm font-semibold mb-2">Leads ({{ leads|length }})</h2>
+<div class="mb-3 flex flex-wrap gap-3 text-xs">
+  <a href="/campaigns/{{ c.id }}" class="{% if not tier_filter %}font-semibold text-slate-900{% else %}text-slate-500 hover:underline{% endif %}">All ({{ tier_total }})</a>
+  <a href="/campaigns/{{ c.id }}?tier=A" class="{% if tier_filter == 'A' %}font-semibold text-slate-900{% else %}text-slate-500 hover:underline{% endif %}">A ({{ tier_counts.A }})</a>
+  <a href="/campaigns/{{ c.id }}?tier=B" class="{% if tier_filter == 'B' %}font-semibold text-slate-900{% else %}text-slate-500 hover:underline{% endif %}">B ({{ tier_counts.B }})</a>
+  <a href="/campaigns/{{ c.id }}?tier=C" class="{% if tier_filter == 'C' %}font-semibold text-slate-900{% else %}text-slate-500 hover:underline{% endif %}">C ({{ tier_counts.C }})</a>
+  <a href="/campaigns/{{ c.id }}?tier=unclassified" class="{% if tier_filter == 'unclassified' %}font-semibold text-slate-900{% else %}text-slate-500 hover:underline{% endif %}">unclassified ({{ tier_counts[None] }}, sends as B)</a>
+</div>
 <div class="overflow-x-auto rounded border bg-white">
   <table class="w-full text-sm">
     <thead class="bg-slate-100 text-slate-500 text-left">
       <tr>
         <th class="px-3 py-2">Email</th><th class="px-3 py-2">Company</th>
-        <th class="px-3 py-2">Contact</th><th class="px-3 py-2">Step</th>
+        <th class="px-3 py-2">Contact</th><th class="px-3 py-2">Tier</th>
+        <th class="px-3 py-2">Step</th>
         <th class="px-3 py-2">Status</th><th class="px-3 py-2">Next action</th>
       </tr>
     </thead>
@@ -75,12 +91,13 @@
         <td class="px-3 py-2">{{ l.email }}</td>
         <td class="px-3 py-2">{{ l.company }}</td>
         <td class="px-3 py-2">{{ l.contact_name or "—" }}{% if l.contact_title %} <span class="text-slate-400">· {{ l.contact_title }}</span>{% endif %}</td>
+        <td class="px-3 py-2">{% include "_lead_tier_cell.html" %}</td>
         <td class="px-3 py-2">{{ l.step }}</td>
         <td class="px-3 py-2"><span class="rounded px-1.5 py-0.5 text-xs bg-slate-100">{{ l.status }}</span></td>
         <td class="px-3 py-2 text-slate-500">{{ l.next_action_at.strftime("%Y-%m-%d") if l.next_action_at else "—" }}</td>
       </tr>
       {% else %}
-      <tr><td colspan="6" class="px-3 py-4 text-slate-400">No leads yet — run enrich with “reveal”.</td></tr>
+      <tr><td colspan="7" class="px-3 py-4 text-slate-400">No leads yet — run enrich with “reveal”.</td></tr>
       {% endfor %}
     </tbody>
   </table>

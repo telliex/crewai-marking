@@ -54,6 +54,9 @@ class Settings(BaseSettings):
 
     # --- Writer ---
     crew_model: str = Field(default="anthropic/claude-sonnet-4-5", alias="CREW_MODEL")
+    # Bare Anthropic SDK model id (NOT the LiteLLM-style "anthropic/..." prefix
+    # that crew_model uses) — this one goes straight to anthropic.Anthropic().
+    tier_model: str = Field(default="claude-haiku-4-5", alias="TIER_MODEL")
 
     # --- Gmail mailbox (OAuth) --- Google Cloud Console OAuth Client ID (Web
     # application); redirect URI is derived from app_base_url, no separate env var.

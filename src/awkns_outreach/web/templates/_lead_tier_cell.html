@@ -1,0 +1,11 @@
+<select name="tier"
+        class="border rounded px-1 py-0.5 text-xs"
+        hx-post="/campaigns/{{ c.id }}/leads/{{ l.id }}/tier"
+        hx-trigger="change"
+        hx-target="closest td"
+        hx-swap="innerHTML">
+  <option value="" {% if not l.tier %}selected{% endif %}>—</option>
+  <option value="A" {% if l.tier == "A" %}selected{% endif %}>A</option>
+  <option value="B" {% if l.tier == "B" %}selected{% endif %}>B</option>
+  <option value="C" {% if l.tier == "C" %}selected{% endif %}>C</option>
+</select>

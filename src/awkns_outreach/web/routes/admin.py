@@ -18,6 +18,7 @@ from awkns_outreach.db.models import Campaign, Lead, MailSequence, Mailbox, Supp
 from awkns_outreach.sequencer import process_campaign
 from awkns_outreach.web.deps import get_db, require_admin, templates
 from awkns_outreach.web.stats import campaign_stats
+from awkns_outreach.writer.tiers import TIERS, classify_campaign_tiers
 
 router = APIRouter(dependencies=[Depends(require_admin)])
 
@@ -228,19 +229,40 @@ def save_campaign_edit(
     return RedirectResponse(f"/campaigns/{c.id}?msg=Campaign updated.", status_code=303)
 
 
+_TIER_FILTERS = ("A", "B", "C", "unclassified")
+
+
 @router.get("/campaigns/{campaign_id}", response_class=HTMLResponse)
 def campaign_detail(
     campaign_id: str, request: Request, db: Session = Depends(get_db),
-    msg: Optional[str] = None,
+    msg: Optional[str] = None, tier: Optional[str] = None,
 ):
     c = _get_campaign(db, campaign_id)
-    leads = db.scalars(
-        select(Lead).where(Lead.campaign_id == c.id)
-        .order_by(Lead.created_at.desc()).limit(200)
-    ).all()
+    tier_filter = tier if tier in _TIER_FILTERS else None
+
+    counts = dict(
+        db.execute(
+            select(Lead.tier, func.count())
+            .where(Lead.campaign_id == c.id)
+            .group_by(Lead.tier)
+        ).all()
+    )
+    tier_counts = {t: counts.get(t, 0) for t in (*TIERS, None)}
+    tier_total = sum(tier_counts.values())
+
+    stmt = select(Lead).where(Lead.campaign_id == c.id)
+    if tier_filter == "unclassified":
+        stmt = stmt.where(Lead.tier.is_(None))
+    elif tier_filter in TIERS:
+        stmt = stmt.where(Lead.tier == tier_filter)
+    leads = db.scalars(stmt.order_by(Lead.created_at.desc()).limit(200)).all()
+
     return templates.TemplateResponse(
         request, "campaign.html",
-        {"c": c, "stats": campaign_stats(db, c), "leads": leads, "msg": msg},
+        {
+            "c": c, "stats": campaign_stats(db, c), "leads": leads, "msg": msg,
+            "tier_filter": tier_filter, "tier_counts": tier_counts, "tier_total": tier_total,
+        },
     )
 
 
@@ -257,6 +279,45 @@ def run_enrich(
     verb = "revealed" if reveal else "found (preview)"
     msg = f"Enrich: {summary.total_found} {verb}; created {summary.created}, skipped {summary.skipped_existing}."
     return RedirectResponse(f"/campaigns/{c.id}?msg={msg}", status_code=303)
+
+
+@router.post("/campaigns/{campaign_id}/classify")
+def run_classify(
+    campaign_id: str,
+    reclassify: str = Form(""),
+    limit: int = Form(500),
+    db: Session = Depends(get_db),
+):
+    c = _get_campaign(db, campaign_id)
+    try:
+        summary = classify_campaign_tiers(db, c, reclassify_all=bool(reclassify), limit=limit)
+    except RuntimeError as exc:
+        return RedirectResponse(f"/campaigns/{c.id}?msg={exc}", status_code=303)
+    a, b, cc = (summary.per_tier.get(t, 0) for t in TIERS)
+    msg = (
+        f"Classified {summary.classified}/{summary.examined}: "
+        f"A {a} · B {b} · C {cc} "
+        f"(skipped {summary.skipped}, failed batches {summary.errors})"
+    )
+    return RedirectResponse(f"/campaigns/{c.id}?msg={msg}", status_code=303)
+
+
+@router.post("/campaigns/{campaign_id}/leads/{lead_id}/tier", response_class=HTMLResponse)
+def set_lead_tier(
+    campaign_id: str, lead_id: str, request: Request,
+    tier: str = Form(""), db: Session = Depends(get_db),
+):
+    c = _get_campaign(db, campaign_id)
+    lead = db.get(Lead, lead_id)
+    if not lead or lead.campaign_id != c.id:
+        raise HTTPException(404, "Lead not found")
+    if tier not in ("", *TIERS):
+        raise HTTPException(400, f"Invalid tier: {tier!r}")
+    lead.tier = tier or None
+    db.commit()
+    return templates.TemplateResponse(
+        request, "_lead_tier_cell.html", {"c": c, "l": lead},
+    )
 
 
 @router.post("/campaigns/{campaign_id}/run")

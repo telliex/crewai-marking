@@ -13,7 +13,9 @@ from awkns_outreach.config import settings
 from awkns_outreach.db.models import Campaign, Event, Lead, MailSequence, Suppression
 from awkns_outreach.db.session import Base, get_db
 from awkns_outreach.web.app import app
+from awkns_outreach.web.routes import admin
 from awkns_outreach.web.stats import campaign_stats
+from awkns_outreach.writer.tiers import TierSummary
 
 
 @pytest.fixture
@@ -359,3 +361,146 @@ def test_campaign_stats_sent_total_counts_lifetime(session):
     stats = campaign_stats(session, c, now=now)
     assert stats["sent_total"] == 2
     assert stats["sent_last_24h"] == 1
+
+
+# --- AI classify route, inline tier edit, and campaign_detail tier filter --
+
+
+def test_classify_route_redirects_with_summary_msg(client, session, monkeypatch):
+    monkeypatch.setattr(settings, "admin_password", "secret")
+    auth = ("admin", "secret")
+    c = Campaign(name="c", target_titles=[], seed_companies=[])
+    session.add(c)
+    session.commit()
+
+    canned = TierSummary(examined=10, classified=8, per_tier={"A": 3, "B": 4, "C": 1}, skipped=2, errors=1)
+    monkeypatch.setattr(admin, "classify_campaign_tiers", lambda *a, **kw: canned)
+
+    r = client.post(f"/campaigns/{c.id}/classify", auth=auth, data={}, follow_redirects=False)
+    assert r.status_code == 303
+    from urllib.parse import unquote
+    location = unquote(r.headers["location"])
+    assert location.startswith(f"/campaigns/{c.id}?msg=")
+    assert "Classified 8/10" in location
+    assert "A 3" in location and "B 4" in location and "C 1" in location
+    assert "skipped 2" in location and "failed batches 1" in location
+
+
+def test_classify_route_surfaces_runtime_error(client, session, monkeypatch):
+    monkeypatch.setattr(settings, "admin_password", "secret")
+    auth = ("admin", "secret")
+    c = Campaign(name="c", target_titles=[], seed_companies=[])
+    session.add(c)
+    session.commit()
+
+    def boom(*a, **kw):
+        raise RuntimeError("ANTHROPIC_API_KEY is not configured")
+
+    monkeypatch.setattr(admin, "classify_campaign_tiers", boom)
+
+    r = client.post(f"/campaigns/{c.id}/classify", auth=auth, data={}, follow_redirects=False)
+    assert r.status_code == 303
+    assert "ANTHROPIC_API_KEY" in r.headers["location"]
+
+
+def test_classify_route_404_for_unknown_campaign(client, monkeypatch):
+    monkeypatch.setattr(settings, "admin_password", "secret")
+    r = client.post(
+        "/campaigns/does-not-exist/classify", auth=("admin", "secret"),
+        data={}, follow_redirects=False,
+    )
+    assert r.status_code == 404
+
+
+def test_inline_tier_sets_and_clears_value(client, session, monkeypatch):
+    monkeypatch.setattr(settings, "admin_password", "secret")
+    auth = ("admin", "secret")
+    c = Campaign(name="c", target_titles=[], seed_companies=[])
+    session.add(c)
+    session.flush()
+    lead = Lead(campaign_id=c.id, email="a@b.com", company="X", status="active")
+    session.add(lead)
+    session.commit()
+
+    r = client.post(
+        f"/campaigns/{c.id}/leads/{lead.id}/tier", auth=auth, data={"tier": "A"},
+    )
+    assert r.status_code == 200
+    assert '<option value="A" selected>A</option>' in r.text
+    session.refresh(lead)
+    assert lead.tier == "A"
+
+    r2 = client.post(
+        f"/campaigns/{c.id}/leads/{lead.id}/tier", auth=auth, data={"tier": ""},
+    )
+    assert r2.status_code == 200
+    assert '<option value="" selected>—</option>' in r2.text
+    session.refresh(lead)
+    assert lead.tier is None
+
+
+def test_inline_tier_400_on_bad_value(client, session, monkeypatch):
+    monkeypatch.setattr(settings, "admin_password", "secret")
+    auth = ("admin", "secret")
+    c = Campaign(name="c", target_titles=[], seed_companies=[])
+    session.add(c)
+    session.flush()
+    lead = Lead(campaign_id=c.id, email="a@b.com", company="X", status="active")
+    session.add(lead)
+    session.commit()
+
+    r = client.post(
+        f"/campaigns/{c.id}/leads/{lead.id}/tier", auth=auth, data={"tier": "Z"},
+    )
+    assert r.status_code == 400
+
+
+def test_inline_tier_404_when_lead_belongs_to_another_campaign(client, session, monkeypatch):
+    monkeypatch.setattr(settings, "admin_password", "secret")
+    auth = ("admin", "secret")
+    c1 = Campaign(name="c1", target_titles=[], seed_companies=[])
+    c2 = Campaign(name="c2", target_titles=[], seed_companies=[])
+    session.add_all([c1, c2])
+    session.flush()
+    lead = Lead(campaign_id=c1.id, email="a@b.com", company="X", status="active")
+    session.add(lead)
+    session.commit()
+
+    r = client.post(
+        f"/campaigns/{c2.id}/leads/{lead.id}/tier", auth=auth, data={"tier": "A"},
+    )
+    assert r.status_code == 404
+
+
+def test_campaign_detail_tier_filter_and_counts(client, session, monkeypatch):
+    monkeypatch.setattr(settings, "admin_password", "secret")
+    auth = ("admin", "secret")
+    c = Campaign(name="c", target_titles=[], seed_companies=[])
+    session.add(c)
+    session.flush()
+    session.add_all([
+        Lead(campaign_id=c.id, email="a@x.com", company="X", status="active", tier="A"),
+        Lead(campaign_id=c.id, email="b@x.com", company="X", status="active", tier="B"),
+        Lead(campaign_id=c.id, email="c1@x.com", company="X", status="active", tier="C"),
+        Lead(campaign_id=c.id, email="d@x.com", company="X", status="active", tier=None),
+        Lead(campaign_id=c.id, email="e@x.com", company="X", status="active", tier=None),
+    ])
+    session.commit()
+
+    all_page = client.get(f"/campaigns/{c.id}", auth=auth)
+    assert all_page.status_code == 200
+    assert "All (5)" in all_page.text
+    assert "A (1)" in all_page.text and "B (1)" in all_page.text and "C (1)" in all_page.text
+    assert "unclassified (2, sends as B)" in all_page.text
+    for email in ("a@x.com", "b@x.com", "c1@x.com", "d@x.com", "e@x.com"):
+        assert email in all_page.text
+
+    a_page = client.get(f"/campaigns/{c.id}?tier=A", auth=auth)
+    assert "a@x.com" in a_page.text
+    for email in ("b@x.com", "c1@x.com", "d@x.com", "e@x.com"):
+        assert email not in a_page.text
+
+    unclassified_page = client.get(f"/campaigns/{c.id}?tier=unclassified", auth=auth)
+    assert "d@x.com" in unclassified_page.text and "e@x.com" in unclassified_page.text
+    for email in ("a@x.com", "b@x.com", "c1@x.com"):
+        assert email not in unclassified_page.text
