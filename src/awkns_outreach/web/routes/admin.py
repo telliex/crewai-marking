@@ -3,11 +3,13 @@ run actions. Server-rendered (Jinja2 + HTMX) so the whole service is one Python
 app with one deploy."""
 from __future__ import annotations
 
+import csv
+import io
 from math import ceil
 from typing import Optional
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
@@ -107,6 +109,26 @@ def dashboard(
 @router.get("/campaigns/new", response_class=HTMLResponse)
 def new_campaign_form(request: Request):
     return templates.TemplateResponse(request, "new_campaign.html", {})
+
+
+@router.get("/campaigns/seed-template.csv")
+def seed_template_csv():
+    buf = io.StringIO()
+    writer = csv.DictWriter(buf, fieldnames=SEED_FIELDS)
+    writer.writeheader()
+    writer.writerow({
+        "name": "Toyota", "website": "toyota.co.jp", "country": "JP",
+        "category": "automotive", "tier": "A", "angle": "why this fits them",
+    })
+    writer.writerow({
+        "name": "Acme Barbershop", "website": "acmebarbershop.com",
+        "country": "US", "category": "barbershop", "tier": "B", "angle": "",
+    })
+    return Response(
+        content=buf.getvalue(),
+        media_type="text/csv",
+        headers={"Content-Disposition": "attachment; filename=seed_companies_template.csv"},
+    )
 
 
 @router.post("/campaigns")

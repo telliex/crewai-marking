@@ -124,6 +124,18 @@ def test_admin_create_and_view_campaign(client, session, monkeypatch):
     assert detail.status_code == 200 and "JP studios" in detail.text
 
 
+def test_seed_template_csv_download(client, monkeypatch):
+    monkeypatch.setattr(settings, "admin_password", "secret")
+    auth = ("admin", "secret")
+    r = client.get("/campaigns/seed-template.csv", auth=auth)
+    assert r.status_code == 200
+    assert r.headers["content-type"].startswith("text/csv")
+    assert "attachment" in r.headers["content-disposition"]
+    assert "seed_companies_template.csv" in r.headers["content-disposition"]
+    first_line = r.text.splitlines()[0]
+    assert first_line.split(",") == list(admin.SEED_FIELDS)
+
+
 def test_legacy_sequence_editor_redirects_to_sequences(client, session, monkeypatch):
     monkeypatch.setattr(settings, "admin_password", "secret")
     auth = ("admin", "secret")
