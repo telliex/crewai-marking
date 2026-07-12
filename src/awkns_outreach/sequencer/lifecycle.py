@@ -11,6 +11,7 @@ steps per tier, resetting/parking lead cursors, mirroring campaign.status).
 """
 from __future__ import annotations
 
+import logging
 from datetime import datetime
 from typing import Optional
 
@@ -18,6 +19,8 @@ from sqlalchemy import func, select, update
 from sqlalchemy.orm import Session
 
 from awkns_outreach.db.models import Lead, MailSequence, Task
+
+log = logging.getLogger("awkns_outreach.sequencer.lifecycle")
 
 # Statuses that block a new schedule/start on the same campaign — only one
 # task may be "active" (scheduled/running/paused) per Campaign at a time.
@@ -183,9 +186,14 @@ def start_due_tasks(db: Session, now: datetime) -> list[Task]:
     ).all()
     started: list[Task] = []
     for task in due:
-        ok, _msg = start_task(db, task, now)
+        ok, msg = start_task(db, task, now)
         if ok:
             started.append(task)
+        else:
+            # Otherwise this failure is invisible: the task just sits
+            # "scheduled" forever with no error surfaced anywhere (e.g. its
+            # assigned sequence was archived out from under it).
+            log.warning("[tasks] failed to start %s: %s", task.name, msg)
     return started
 
 

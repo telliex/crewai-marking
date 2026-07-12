@@ -163,6 +163,10 @@ def classify_campaign_tiers(
         matched = 0
         for lead_id, tier in result.items():
             lead = by_id.get(lead_id)
+            # `tier not in TIERS` also rejects "" here, so this write path
+            # can never persist an empty string — empty string must become
+            # NULL, not "", since SQL coalesce(tier, "B") and Python
+            # "tier or 'B'" treat "" differently.
             if lead is None or tier not in TIERS:
                 continue
             lead.tier = tier

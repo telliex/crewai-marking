@@ -312,6 +312,9 @@ def set_lead_tier(
         raise HTTPException(404, "Lead not found")
     if tier not in ("", *TIERS):
         raise HTTPException(400, f"Invalid tier: {tier!r}")
+    # empty string must become NULL, not "" — SQL coalesce(tier, "B") and
+    # Python "tier or 'B'" treat "" differently, so an un-normalized ""
+    # would silently skip the "unset" default-B behavior both rely on.
     lead.tier = tier or None
     db.commit()
     return templates.TemplateResponse(

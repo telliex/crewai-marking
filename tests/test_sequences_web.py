@@ -304,6 +304,41 @@ def test_archive_and_unarchive_sequence(client, session):
     assert seq.status == "active"
 
 
+def test_archive_blocked_when_assigned_to_in_play_task(client, session):
+    c = _make_campaign(session)
+    seq = MailSequence(name="Assigned seq", status="active", steps=[])
+    session.add(seq)
+    session.commit()
+    task = Task(name="Scheduled task", campaign_id=c.id, status="scheduled", sequences={"B": seq.id})
+    session.add(task)
+    session.commit()
+
+    r = client.post(f"/sequences/{seq.id}/status", auth=AUTH, follow_redirects=False,
+                     data={"action": "archive", "status": "active"})
+    assert r.status_code == 303
+    from urllib.parse import unquote
+    assert "Scheduled task" in unquote(r.headers["location"])
+    session.refresh(seq)
+    assert seq.status == "active"  # unchanged
+
+
+def test_archive_allowed_once_task_no_longer_blocks(client, session):
+    c = _make_campaign(session)
+    seq = MailSequence(name="Formerly assigned", status="active", steps=[])
+    session.add(seq)
+    session.commit()
+    # Task in a non-blocking status (completed) doesn't block archive.
+    task = Task(name="Done task", campaign_id=c.id, status="completed", sequences={"B": seq.id})
+    session.add(task)
+    session.commit()
+
+    r = client.post(f"/sequences/{seq.id}/status", auth=AUTH, follow_redirects=False,
+                     data={"action": "archive", "status": "active"})
+    assert r.status_code == 303
+    session.refresh(seq)
+    assert seq.status == "archived"
+
+
 def test_status_change_noop_message_and_unknown_action(client, session):
     seq = MailSequence(name="Already active", status="active", steps=[])
     session.add(seq)

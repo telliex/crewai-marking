@@ -254,8 +254,23 @@ def change_sequence_status(
     new_status = transitions.get(seq.status)
     if new_status is None:
         msg = f'Sequence "{seq.name}" is already {seq.status}.'
+    elif new_status == "archived":
+        # Same guard as delete: archiving a sequence still assigned to an
+        # in-play Task would leave that task's every future scheduler tick
+        # silently failing to start (start_task's _validate_assignments
+        # rejects non-active sequences) with no visible error anywhere.
+        blocking_task = _assigning_task(db, seq.id)
+        if blocking_task is not None:
+            return RedirectResponse(
+                f"/sequences?status={status}&msg=Sequence is assigned to task "
+                f"“{blocking_task.name}” — unassign it first.",
+                status_code=303,
+            )
+        seq.status = new_status
+        db.commit()
+        msg = f'Sequence "{seq.name}" archived.'
     else:
         seq.status = new_status
         db.commit()
-        msg = f'Sequence "{seq.name}" {"archived" if new_status == "archived" else "unarchived"}.'
+        msg = f'Sequence "{seq.name}" unarchived.'
     return RedirectResponse(f"/sequences?status={status}&msg={msg}", status_code=303)
