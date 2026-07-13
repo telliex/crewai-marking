@@ -95,12 +95,12 @@ def _format_delay(minutes: int) -> dict:
     dropdown to days, matching the old days-only control's default."""
     if not minutes:
         return {"delay_value": 0, "delay_unit": 1440, "delay_label": "Immediately after previous"}
+    # _DELAY_UNITS ends in 1, and every int is divisible by 1, so this loop
+    # always finds a match — no need for a for/else fallback.
     for unit in _DELAY_UNITS:
         if minutes % unit == 0:
             value = minutes // unit
             break
-    else:
-        value, unit = minutes, 1
     name = _DELAY_UNIT_NAMES[unit]
     label = f"{value} {name}{'s' if value != 1 else ''} after previous"
     return {"delay_value": value, "delay_unit": unit, "delay_label": label}

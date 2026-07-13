@@ -284,7 +284,9 @@ class MailSequence(Base):
     status: Mapped[str] = mapped_column(String, default="active", nullable=False)
 
     # Ordered step list, snapshotted from EmailTemplate rows at build time:
-    # {key, delay_days, subject, body, attachments, source_template_id}.
+    # {key, delay_minutes, subject, body, attachments, source_template_id}.
+    # Some pre-existing rows still carry the legacy `delay_days` key instead —
+    # see `sequencer.engine.step_delay_minutes` for the compat read path.
     # `source_template_id` is kept for provenance/re-editing only — it is not
     # dereferenced at send time.
     steps: Mapped[list[dict[str, Any]]] = mapped_column(
