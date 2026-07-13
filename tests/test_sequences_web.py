@@ -200,6 +200,54 @@ def test_edit_page_renders_independent_editor_per_step(client, session):
     assert "first body text" in r.text and "second body text" in r.text
 
 
+def test_edit_page_renders_connector_between_steps_with_delay_label(client, session):
+    seq = MailSequence(
+        name="Two steps", status="active",
+        steps=[
+            {"key": "intro", "delay_minutes": 0, "subject": "s1", "body": "b1",
+             "attachments": [], "source_template_id": None},
+            {"key": "bump", "delay_minutes": 4320, "subject": "s2", "body": "b2",
+             "attachments": [], "source_template_id": None},
+        ],
+    )
+    session.add(seq)
+    session.commit()
+
+    r = client.get(f"/sequences/{seq.id}/edit", auth=AUTH)
+    assert r.status_code == 200
+    live_html = r.text.split('<template id="step-tpl">')[0]
+    # Exactly one connector — between step 1 and step 2, none before step 1.
+    assert live_html.count('class="step-connector') == 1
+    assert "3 days after previous" in live_html
+    assert 'name="delay_minutes" value="4320"' in live_html
+
+
+def test_edit_page_connector_falls_back_to_legacy_delay_days(client, session):
+    seq = MailSequence(
+        name="Legacy seq", status="active",
+        steps=[
+            {"key": "intro", "delay_days": 0, "subject": "s1", "body": "b1",
+             "attachments": [], "source_template_id": None},
+            {"key": "bump", "delay_days": 3, "subject": "s2", "body": "b2",
+             "attachments": [], "source_template_id": None},
+        ],
+    )
+    session.add(seq)
+    session.commit()
+
+    r = client.get(f"/sequences/{seq.id}/edit", auth=AUTH)
+    assert r.status_code == 200
+    assert "3 days after previous" in r.text
+    assert 'name="delay_minutes" value="4320"' in r.text
+
+
+def test_new_sequence_form_has_no_connector_before_first_step(client, session):
+    r = client.get("/sequences/new", auth=AUTH)
+    assert r.status_code == 200
+    live_html = r.text.split('<template id="step-tpl">')[0]
+    assert 'class="step-connector' not in live_html
+
+
 def test_edit_and_delete_blocked_while_archived(client, session):
     seq = MailSequence(name="Archived seq", status="archived", steps=[])
     session.add(seq)
