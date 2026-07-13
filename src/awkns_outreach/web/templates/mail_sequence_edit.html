@@ -8,8 +8,8 @@
 
 {% macro step_block(step) %}
 {% set preview = step.get('preview') %}
-<div class="step-block rounded border bg-white p-4 mb-3"
-     hx-target="find .tw-preview-pane" hx-include="closest .step-block">
+{% set tw_trigger = 'hx-post="/templates/preview-fragment" hx-trigger="input changed delay:500ms, tw-refresh-preview" hx-include="closest .step-block"' %}
+<div class="step-block rounded border bg-white p-4 mb-3">
   <div class="flex items-center justify-between mb-3">
     <h3 class="text-sm font-semibold text-slate-700">Step <span class="step-num"></span></h3>
     <button type="button" onclick="removeStep(this)"
@@ -20,55 +20,81 @@
     <span class="delay-badge-first hidden text-xs font-medium text-slate-500 rounded-full bg-slate-100 px-3 py-1">
       Sent immediately
     </span>
-    <label class="delay-badge-later text-xs font-medium text-slate-600 rounded-full bg-amber-50 border border-amber-200 px-3 py-1 inline-flex items-center gap-1">
-      Send email in
-      <input name="delay_days" type="number" min="0"
-             value="{{ step.delay_days if step.delay_days is not none else 0 }}"
-             class="w-14 border rounded px-1 py-0.5 text-xs text-center">
-      day(s) after previous
-    </label>
+    <!-- Only the current first step's delay is its own — every later step's
+         delay lives on the connector pill rendered before it (step_connector
+         below). This field stays disabled (excluded from form submission)
+         except when renumber() marks this card as first, so exactly one
+         delay_minutes value is submitted per step regardless of position. -->
+    <input type="hidden" name="delay_minutes" value="0" class="step-own-delay-minutes" disabled>
   </div>
 
-  <div class="grid grid-cols-1 md:grid-cols-2 gap-3 mb-3">
-    <label class="text-xs text-slate-500">Key (label for logs)
-      <input name="step_key" value="{{ step.key or '' }}"
-             class="mt-1 w-full border rounded px-2 py-1.5 text-sm" placeholder="intro">
-    </label>
-    <label class="text-xs text-slate-500">Subject
-      <input name="subject" value="{{ step.subject or '' }}" class="tw-subject-field mt-1 w-full border rounded px-2 py-1.5 text-sm"
-             placeholder="quick idea for {company}"
-             hx-post="/templates/preview-fragment" hx-trigger="input changed delay:500ms">
-    </label>
+  <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+    <div>
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-3 mb-3">
+        <label class="text-xs text-slate-500">Key (label for logs)
+          <input name="step_key" value="{{ step.key or '' }}"
+                 class="mt-1 w-full border rounded px-2 py-1.5 text-sm" placeholder="intro">
+        </label>
+        <label class="text-xs text-slate-500">Subject
+          <input name="subject" value="{{ step.subject or '' }}" class="tw-subject-field mt-1 w-full border rounded px-2 py-1.5 text-sm"
+                 placeholder="quick idea for {company}" {{ tw_trigger | safe }}>
+        </label>
+      </div>
+
+      <label class="text-xs text-slate-500 block mb-1">Body</label>
+      {{ rich_editor(step.body or '', step.attachments_json or '[]', legacy_ids=false,
+                      extra_body_attrs=tw_trigger, extra_attachments_attrs=tw_trigger) }}
+
+      <input type="hidden" name="source_template_id" class="step-source-template-id" value="{{ step.source_template_id or '' }}">
+      {% set src = (template_options | selectattr('id', 'equalto', step.source_template_id) | first) if step.source_template_id else None %}
+      <p class="tw-source-hint text-xs text-slate-400 mt-1{% if not src %} hidden{% endif %}">Source: <span class="tw-source-hint-name">{{ src.name if src else '' }}</span></p>
+
+      {% if template_options %}
+      <label class="text-xs text-slate-500 block mt-2">Insert template <span class="text-slate-400 font-normal">(overwrites subject/body above)</span>
+        <select class="template-picker mt-1 border rounded px-2 py-1 text-sm" onchange="insertTemplate(this)">
+          <option value="">— choose a template —</option>
+          {% for tpl in template_options %}
+          <option value="{{ loop.index0 }}" {% if step.source_template_id == tpl.id %}selected{% endif %}>{{ tpl.name }}</option>
+          {% endfor %}
+        </select>
+      </label>
+      {% endif %}
+    </div>
+
+    <div>
+      <div class="rounded border bg-white p-4">
+        <div class="text-xs text-slate-500 mb-2">Live preview</div>
+        <div class="tw-preview-pane">{% include "_template_preview_fragment.html" %}</div>
+        <div class="mt-4 pt-4 border-t">
+          {% with test_send_include = 'closest .step-block', msg = None %}
+            {% include "_template_test_send_fragment.html" %}
+          {% endwith %}
+        </div>
+      </div>
+    </div>
   </div>
+</div>
+{% endmacro %}
 
-  <label class="text-xs text-slate-500 block mb-1">Body</label>
-  {{ rich_editor(step.body or '', step.attachments_json or '[]', legacy_ids=false,
-                  extra_body_attrs='hx-post="/templates/preview-fragment" hx-trigger="input changed delay:500ms"',
-                  extra_attachments_attrs='hx-post="/templates/preview-fragment" hx-trigger="input changed delay:500ms"') }}
-
-  <input type="hidden" name="source_template_id" class="step-source-template-id" value="{{ step.source_template_id or '' }}">
-
-  {% if template_options %}
-  <label class="text-xs text-slate-500 block mt-2">Insert template <span class="text-slate-400 font-normal">(overwrites subject/body above)</span>
-    <select class="template-picker mt-1 border rounded px-2 py-1 text-sm" onchange="insertTemplate(this)">
-      <option value="">— choose a template —</option>
-      {% for tpl in template_options %}
-      <option value="{{ loop.index0 }}">{{ tpl.name }}</option>
-      {% endfor %}
+{% macro step_connector(step) %}
+<div class="step-connector relative z-10 flex justify-center -my-1">
+  <button type="button"
+          class="connector-pill inline-flex items-center gap-1 rounded-full border border-slate-300 bg-white px-3 py-1 text-xs font-medium text-slate-600 shadow-sm"
+          onclick="toggleConnectorPopover(this)">
+    <span aria-hidden="true">&#9201;</span>
+    <span class="connector-label">{{ step.delay_label }}</span>
+  </button>
+  <div class="connector-popover hidden absolute top-full z-20 mt-1 flex items-center gap-2 whitespace-nowrap rounded border bg-white p-3 shadow-lg">
+    <span class="text-xs text-slate-500">Execute step after</span>
+    <input type="number" min="0" value="{{ step.delay_value }}"
+           class="connector-value w-14 border rounded px-1 py-0.5 text-xs text-center">
+    <select class="connector-unit border rounded px-1 py-0.5 text-xs">
+      <option value="1" {% if step.delay_unit == 1 %}selected{% endif %}>minutes</option>
+      <option value="60" {% if step.delay_unit == 60 %}selected{% endif %}>hours</option>
+      <option value="1440" {% if step.delay_unit == 1440 %}selected{% endif %}>days</option>
     </select>
-  </label>
-  {% endif %}
-
-  <div class="mt-3 pt-3 border-t">
-    <div class="text-xs text-slate-500 mb-2">Live preview</div>
-    <div class="tw-preview-pane">{% include "_template_preview_fragment.html" %}</div>
   </div>
-
-  <div class="mt-3 pt-3 border-t">
-    {% with test_send_include = 'closest .step-block', msg = None %}
-      {% include "_template_test_send_fragment.html" %}
-    {% endwith %}
-  </div>
+  <input type="hidden" name="delay_minutes" value="{{ step.delay_minutes }}" class="connector-minutes">
 </div>
 {% endmacro %}
 
@@ -92,7 +118,10 @@
   </div>
 
   <div id="steps">
-    {% for step in steps_for_editor %}{{ step_block(step) }}{% endfor %}
+    {% for step in steps_for_editor %}
+      {% if not loop.first %}{{ step_connector(step) }}{% endif %}
+      {{ step_block(step) }}
+    {% endfor %}
   </div>
 
   <div class="flex flex-wrap gap-2">
@@ -106,6 +135,7 @@
 </form>
 
 <template id="step-tpl">{{ step_block({}) }}</template>
+<template id="connector-tpl">{{ step_connector({'delay_minutes': 0, 'delay_value': 0, 'delay_unit': 1440, 'delay_label': 'Immediately after previous'}) }}</template>
 
 {% include "_rich_editor_script.html" %}
 <script>
@@ -113,18 +143,112 @@
   // (and attachments/source id) into that step's rich editor client-side.
   const TEMPLATES = {{ template_options|tojson }};
 
+  let twPreviewIdCounter = 0;
+
+  function setSourceHint(block, name) {
+    const hint = block.querySelector('.tw-source-hint');
+    block.querySelector('.tw-source-hint-name').textContent = name || '';
+    hint.classList.toggle('hidden', !name);
+  }
+
+  // The body/subject sync events fired WHILE applying a template (Quill's
+  // text-change on the programmatic body set) must not be mistaken for a
+  // user edit — templateSync guards exactly that window.
+  function markTemplateDiverged(block) {
+    if (block.dataset.templateSync) return;
+    const picker = block.querySelector('.template-picker');
+    if (picker) picker.value = '';
+    // Source hint is provenance, not a live link — it stays even once the
+    // body no longer matches the template verbatim.
+  }
+
+  // Force an immediate (non-debounced) preview refresh — used right after a
+  // template is inserted, so "Live preview" doesn't sit stale until the
+  // user happens to type something. Firing on the subject field is enough:
+  // hx-include on every trigger field pulls the whole step-block anyway.
+  function refreshPreviewNow(block) {
+    block.querySelector('[name=subject]').dispatchEvent(new Event('tw-refresh-preview'));
+  }
+
+  function formatDelayLabel(minutes) {
+    if (!minutes) return 'Immediately after previous';
+    let value, unitName;
+    if (minutes % 1440 === 0) { value = minutes / 1440; unitName = 'day'; }
+    else if (minutes % 60 === 0) { value = minutes / 60; unitName = 'hour'; }
+    else { value = minutes; unitName = 'minute'; }
+    return value + ' ' + unitName + (value !== 1 ? 's' : '') + ' after previous';
+  }
+
+  function updateConnectorFromPopover(connector) {
+    const valueInput = connector.querySelector('.connector-value');
+    const unitSelect = connector.querySelector('.connector-unit');
+    const minutes = Math.max(0, parseInt(valueInput.value, 10) || 0) * parseInt(unitSelect.value, 10);
+    connector.querySelector('.connector-minutes').value = minutes;
+    connector.querySelector('.connector-label').textContent = formatDelayLabel(minutes);
+  }
+
+  function closeAllConnectorPopovers() {
+    document.querySelectorAll('.connector-popover').forEach((p) => p.classList.add('hidden'));
+  }
+
+  function toggleConnectorPopover(btn) {
+    const popover = btn.closest('.step-connector').querySelector('.connector-popover');
+    const willOpen = popover.classList.contains('hidden');
+    closeAllConnectorPopovers();
+    popover.classList.toggle('hidden', !willOpen);
+  }
+
+  document.addEventListener('click', (e) => {
+    if (!e.target.closest('.step-connector')) closeAllConnectorPopovers();
+  });
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') closeAllConnectorPopovers();
+  });
+
+  function wireConnector(connector) {
+    const apply = () => updateConnectorFromPopover(connector);
+    connector.querySelector('.connector-value').addEventListener('input', apply);
+    connector.querySelector('.connector-unit').addEventListener('change', apply);
+  }
+
+  function wireStepBlock(block) {
+    // htmx resolves inherited `find`/`closest` hx-target selectors relative
+    // to the element that actually triggered the request, not the ancestor
+    // that declared them — the subject/body/attachments fields are leaf
+    // <input>s with no children, so the old `hx-target="find .tw-preview-pane"`
+    // on the .step-block wrapper never matched anything and the preview
+    // silently never refreshed on edit. Give this step's preview pane a
+    // unique id instead and target it explicitly.
+    const previewId = 'tw-preview-' + (twPreviewIdCounter++);
+    block.querySelector('.tw-preview-pane').id = previewId;
+    const triggerFields = [
+      block.querySelector('[name=subject]'),
+      block.querySelector('.tw-body-field'),
+      block.querySelector('.tw-attachments-field'),
+    ];
+    triggerFields.forEach((el) => el.setAttribute('hx-target', '#' + previewId));
+    htmx.process(block);
+
+    block.querySelector('[name=subject]').addEventListener('input', () => markTemplateDiverged(block));
+    block.querySelector('.tw-body-field').addEventListener('input', () => markTemplateDiverged(block));
+  }
+
   function insertTemplate(select) {
     const tpl = TEMPLATES[parseInt(select.value, 10)];
     if (!tpl) return;
     const block = select.closest('.step-block');
     const root = block.querySelector('.tw-editor');
     const state = root._tw;
+    block.dataset.templateSync = '1';
     twSetEditorBody(state.quill, tpl.body || '');
     state.attachments = tpl.attachments || [];
     twSyncAttachments(root);
     block.querySelector('[name=subject]').value = tpl.subject || '';
     block.querySelector('[name=source_template_id]').value = tpl.id || '';
-    select.value = '';
+    setSourceHint(block, tpl.name);
+    // Leave the picker showing this template — only a later edit clears it.
+    setTimeout(() => { delete block.dataset.templateSync; }, 0);
+    refreshPreviewNow(block);
   }
 
   // Re-run after every add/remove: numbers the cards and keeps the
@@ -137,26 +261,52 @@
       const isFirst = i === 0;
       el.classList.toggle('is-first-step', isFirst);
       el.querySelector('.delay-badge-first').classList.toggle('hidden', !isFirst);
-      el.querySelector('.delay-badge-later').classList.toggle('hidden', isFirst);
+      el.querySelector('.step-own-delay-minutes').disabled = !isFirst;
     });
   }
 
   function addStep() {
+    const stepsEl = document.getElementById('steps');
+    const hasExisting = stepsEl.querySelectorAll('.step-block').length > 0;
+    if (hasExisting) {
+      const connTpl = document.getElementById('connector-tpl');
+      const connNode = connTpl.content.firstElementChild.cloneNode(true);
+      stepsEl.appendChild(connNode);
+      wireConnector(connNode);
+    }
     const tpl = document.getElementById('step-tpl');
     const node = tpl.content.firstElementChild.cloneNode(true);
-    document.getElementById('steps').appendChild(node);
+    stepsEl.appendChild(node);
     twInitEditor(node.querySelector('.tw-editor'));
-    htmx.process(node);
+    wireStepBlock(node);
     renumber();
   }
 
   function removeStep(btn) {
-    btn.closest('.step-block').remove();
+    const block = btn.closest('.step-block');
+    const prev = block.previousElementSibling;
+    if (prev && prev.classList.contains('step-connector')) prev.remove();
+    block.remove();
+    // If the removed block was the first step, the connector that used to
+    // sit between it and the (former) second step is now leading — a first
+    // step never has a connector before it, so drop it too.
+    const stepsEl = document.getElementById('steps');
+    const first = stepsEl.firstElementChild;
+    if (first && first.classList.contains('step-connector')) first.remove();
     renumber();
   }
 
   // Wire up every server-rendered step's Quill instance, then renumber.
-  document.querySelectorAll('#steps .tw-editor').forEach((el) => twInitEditor(el));
+  // Guarded the same way as insertTemplate: twInitEditor's initial body
+  // load fires its own synthetic sync event, which must not be read as a
+  // user edit and clear an already-`selected` template picker option.
+  document.querySelectorAll('#steps .step-block').forEach((block) => {
+    block.dataset.templateSync = '1';
+    twInitEditor(block.querySelector('.tw-editor'));
+    wireStepBlock(block);
+    setTimeout(() => { delete block.dataset.templateSync; }, 0);
+  });
+  document.querySelectorAll('#steps .step-connector').forEach(wireConnector);
   renumber();
   // Start with one empty step if the sequence has none yet.
   if (document.querySelectorAll('#steps .step-block').length === 0) addStep();
