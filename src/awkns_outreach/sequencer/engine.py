@@ -34,6 +34,16 @@ MAX_SEND_ERRORS = 3
 STALE_CLAIM_SECONDS = 10 * 60
 
 
+def step_delay_minutes(step: dict) -> int:
+    """Canonical read path for a step's delay. New saves write `delay_minutes`
+    directly; any step dict that predates it (persisted `MailSequence.steps`
+    or a `Task.steps_by_tier` snapshot taken before this field existed) only
+    has `delay_days` — convert it rather than requiring a data migration."""
+    if "delay_minutes" in step:
+        return step["delay_minutes"]
+    return step.get("delay_days", 0) * 1440
+
+
 @dataclass
 class RunSummary:
     dry_run: bool
@@ -207,7 +217,7 @@ def process_campaign(
             if not dry_run:
                 next_step = lead.step + 1
                 done = next_step >= len(steps)
-                next_delay = None if done else steps[next_step].get("delay_days", 0)
+                next_delay = None if done else step_delay_minutes(steps[next_step])
                 session.add(Event(lead_id=lead.id, type="sent", step=lead.step,
                                   detail=res.id, subject=res.subject))
                 lead.step = next_step
@@ -215,7 +225,7 @@ def process_campaign(
                 lead.status = "completed" if done else "active"  # releases the claim
                 lead.thread_ref = lead.thread_ref or res.id
                 lead.next_action_at = (
-                    None if next_delay is None else now + timedelta(days=next_delay)
+                    None if next_delay is None else now + timedelta(minutes=next_delay)
                 )
                 session.commit()
         else:

@@ -21,6 +21,30 @@ _SEQ = [
     {"key": "bump", "delay_days": 3, "subject": "re: hi", "body": "b1"},
 ]
 
+_SEQ_MINUTES = [
+    {"key": "intro", "delay_minutes": 0, "subject": "hi {company}", "body": "b0 {first_name}"},
+    {"key": "bump", "delay_minutes": 90, "subject": "re: hi", "body": "b1"},
+]
+_STEPS_BY_TIER_MINUTES = {"B": _SEQ_MINUTES}
+
+
+def test_step_delay_minutes_reads_new_field_directly():
+    assert engine.step_delay_minutes({"delay_minutes": 45}) == 45
+
+
+def test_step_delay_minutes_falls_back_to_legacy_delay_days():
+    assert engine.step_delay_minutes({"delay_days": 3}) == 3 * 1440
+
+
+def test_step_delay_minutes_prefers_new_field_over_legacy():
+    # A step should never carry both in practice, but if it does, the new
+    # field wins — it's the one a fresh save would have written.
+    assert engine.step_delay_minutes({"delay_minutes": 10, "delay_days": 3}) == 10
+
+
+def test_step_delay_minutes_defaults_to_zero():
+    assert engine.step_delay_minutes({}) == 0
+
 
 # --- pure-logic units ------------------------------------------------------
 
@@ -106,6 +130,18 @@ def test_real_send_advances_step_and_logs(db_session, monkeypatch):
     assert lead.thread_ref == "msg-0"
     ev = db_session.query(Event).one()
     assert ev.type == "sent" and ev.step == 0 and ev.detail == "msg-0"
+
+
+def test_real_send_advances_step_using_delay_minutes(db_session, monkeypatch):
+    _mock_ok(monkeypatch)
+    c = _campaign(db_session)
+    lead = _lead(db_session, c)
+    s = engine.process_campaign(db_session, c, _STEPS_BY_TIER_MINUTES, dry_run=False, now=NOW, ignore_hours=True, gap_ms=0)
+    assert s.sent == 1
+    db_session.refresh(lead)
+    assert lead.step == 1 and lead.status == "active"
+    got = lead.next_action_at.replace(tzinfo=None)
+    assert got == (NOW + timedelta(minutes=90)).replace(tzinfo=None)
 
 
 def test_final_step_completes(db_session, monkeypatch):
