@@ -67,7 +67,7 @@ def test_create_sequence_with_two_steps(client, session):
     r = client.post("/sequences", auth=AUTH, follow_redirects=False, data={
         "name": "Q3 outreach",
         "step_key": ["intro", "bump"],
-        "delay_days": ["not-a-number", "3"],
+        "delay_minutes": ["not-a-number", "3"],
         "subject": ["hi {company}", "re: hi {company}"],
         "body": ["Hi {first_name}", "Following up"],
         "attachments": [attachments_0, "[]"],
@@ -81,14 +81,14 @@ def test_create_sequence_with_two_steps(client, session):
     assert seq.status == "active"
     assert len(seq.steps) == 2
     assert seq.steps[0]["key"] == "intro"
-    assert seq.steps[0]["delay_days"] == 0  # forced, even though the form sent junk
+    assert seq.steps[0]["delay_minutes"] == 0  # forced, even though the form sent junk
     assert seq.steps[0]["subject"] == "hi {company}"
     assert seq.steps[0]["attachments"] == [
         {"filename": "a.pdf", "stored_name": "s1.pdf", "content_type": "application/pdf", "size": 10}
     ]
     assert seq.steps[0]["source_template_id"] == "tpl-1"
     assert seq.steps[1]["key"] == "bump"
-    assert seq.steps[1]["delay_days"] == 3  # tolerant parse of a real int
+    assert seq.steps[1]["delay_minutes"] == 3  # tolerant parse of a real int
     assert seq.steps[1]["attachments"] == []
     assert seq.steps[1]["source_template_id"] is None
 
@@ -97,7 +97,7 @@ def test_create_sequence_sanitizes_quill_html_body(client, session):
     r = client.post("/sequences", auth=AUTH, follow_redirects=False, data={
         "name": "Rich",
         "step_key": ["intro"],
-        "delay_days": ["0"],
+        "delay_minutes": ["0"],
         "subject": ["s"],
         "body": ['<p onclick="x()">Hi <script>alert(1)</script><strong>{first_name}</strong></p>'],
         "attachments": ["[]"],
@@ -111,7 +111,7 @@ def test_create_sequence_sanitizes_quill_html_body(client, session):
 def test_create_sequence_missing_name_errors_without_persisting(client, session):
     r = client.post("/sequences", auth=AUTH, data={
         "name": "  ",
-        "step_key": [], "delay_days": [], "subject": [], "body": [],
+        "step_key": [], "delay_minutes": [], "subject": [], "body": [],
         "attachments": [], "source_template_id": [],
     })
     assert r.status_code == 200  # redirect followed back to the form
@@ -211,7 +211,7 @@ def test_edit_and_delete_blocked_while_archived(client, session):
 
     post_r = client.post(f"/sequences/{seq.id}/edit", auth=AUTH, follow_redirects=False, data={
         "action": "save", "name": "Should not apply",
-        "step_key": [], "delay_days": [], "subject": [], "body": [],
+        "step_key": [], "delay_minutes": [], "subject": [], "body": [],
         "attachments": [], "source_template_id": [],
     })
     assert post_r.status_code == 303
@@ -276,14 +276,14 @@ def test_save_edit_updates_name_and_steps(client, session):
 
     r = client.post(f"/sequences/{seq.id}/edit", auth=AUTH, follow_redirects=False, data={
         "action": "save", "name": "Updated",
-        "step_key": ["intro"], "delay_days": ["5"], "subject": ["s"], "body": ["b"],
+        "step_key": ["intro"], "delay_minutes": ["5"], "subject": ["s"], "body": ["b"],
         "attachments": ["[]"], "source_template_id": [""],
     })
     assert r.status_code == 303
     session.refresh(seq)
     assert seq.name == "Updated"
     assert len(seq.steps) == 1
-    assert seq.steps[0]["delay_days"] == 0  # first step forced to 0 even on edit
+    assert seq.steps[0]["delay_minutes"] == 0  # first step forced to 0 even on edit
 
 
 def test_archive_and_unarchive_sequence(client, session):

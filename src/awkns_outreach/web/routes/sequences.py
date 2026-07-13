@@ -21,6 +21,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from awkns_outreach.db.models import EmailTemplate, MailSequence, Task
+from awkns_outreach.sequencer.engine import step_delay_minutes
 from awkns_outreach.web.deps import get_db, require_admin, templates
 from awkns_outreach.web.routes.admin import SEQUENCE_PLACEHOLDERS
 from awkns_outreach.web.routes.templates_lib import (
@@ -83,12 +84,37 @@ def _template_options(db: Session) -> list[dict]:
     ]
 
 
+_DELAY_UNITS = (1440, 60, 1)  # days, hours, minutes — largest unit first
+_DELAY_UNIT_NAMES = {1440: "day", 60: "hour", 1: "minute"}
+
+
+def _format_delay(minutes: int) -> dict:
+    """Precompute the connector pill's display fields for a step's delay, in
+    the largest unit that divides `minutes` evenly (falls back to minutes).
+    `0` reads as "immediately" and defaults its (unused-until-edited) unit
+    dropdown to days, matching the old days-only control's default."""
+    if not minutes:
+        return {"delay_value": 0, "delay_unit": 1440, "delay_label": "Immediately after previous"}
+    for unit in _DELAY_UNITS:
+        if minutes % unit == 0:
+            value = minutes // unit
+            break
+    else:
+        value, unit = minutes, 1
+    name = _DELAY_UNIT_NAMES[unit]
+    label = f"{value} {name}{'s' if value != 1 else ''} after previous"
+    return {"delay_value": value, "delay_unit": unit, "delay_label": label}
+
+
 def _steps_for_editor(steps: list[dict]) -> list[dict]:
-    """Augment each saved step dict with the two derived keys the editor
+    """Augment each saved step dict with the derived keys the editor
     template needs but doesn't persist: `attachments_json` (for the rich
-    editor's hidden attachments-initial field) and `preview` (the card's
-    initial preview-pane render, before any HTMX interaction) — mirrors
-    templates_lib.py's edit_template_form convention exactly."""
+    editor's hidden attachments-initial field), `preview` (the card's
+    initial preview-pane render, before any HTMX interaction), and the
+    normalized `delay_minutes`/`delay_value`/`delay_unit`/`delay_label`
+    (works for both new steps and legacy `delay_days`-only ones, via
+    `step_delay_minutes`) — mirrors templates_lib.py's edit_template_form
+    convention exactly."""
     out = []
     for step in steps:
         step = dict(step)
@@ -96,17 +122,19 @@ def _steps_for_editor(steps: list[dict]) -> list[dict]:
         step["preview"] = _render_preview(
             step.get("subject", ""), step.get("body", ""), step.get("attachments") or []
         )
+        step["delay_minutes"] = step_delay_minutes(step)
+        step.update(_format_delay(step["delay_minutes"]))
         out.append(step)
     return out
 
 
 def _build_steps(
-    step_key: list[str], delay_days: list[str], subject: list[str], body: list[str],
+    step_key: list[str], delay_minutes: list[str], subject: list[str], body: list[str],
     attachments: list[str], source_template_id: list[str],
 ) -> list[dict]:
     steps: list[dict] = []
     for i, (k, d, subj, b, a, sid) in enumerate(
-        zip(step_key, delay_days, subject, body, attachments, source_template_id)
+        zip(step_key, delay_minutes, subject, body, attachments, source_template_id)
     ):
         # Skip fully blank rows (a step needs at least a subject or a body).
         if not subj.strip() and not b.strip():
@@ -117,14 +145,14 @@ def _build_steps(
             delay = 0
         steps.append({
             "key": k.strip() or f"step{i + 1}",
-            "delay_days": delay,
+            "delay_minutes": delay,
             "subject": subj.strip(),
             "body": _clean_body(b),
             "attachments": _parse_attachments(a),
             "source_template_id": sid.strip() or None,
         })
     if steps:
-        steps[0]["delay_days"] = 0  # first step always fires immediately
+        steps[0]["delay_minutes"] = 0  # first step always fires immediately
     return steps
 
 
@@ -162,7 +190,7 @@ def new_sequence_form(request: Request, db: Session = Depends(get_db), msg: Opti
 def create_sequence(
     name: str = Form(""),
     step_key: list[str] = Form(default=[]),
-    delay_days: list[str] = Form(default=[]),
+    delay_minutes: list[str] = Form(default=[]),
     subject: list[str] = Form(default=[]),
     body: list[str] = Form(default=[]),
     attachments: list[str] = Form(default=[]),
@@ -173,7 +201,7 @@ def create_sequence(
     if not name:
         return RedirectResponse("/sequences/new?msg=Name is required.", status_code=303)
 
-    steps = _build_steps(step_key, delay_days, subject, body, attachments, source_template_id)
+    steps = _build_steps(step_key, delay_minutes, subject, body, attachments, source_template_id)
     seq = MailSequence(name=name, steps=steps)
     db.add(seq)
     db.commit()
@@ -205,7 +233,7 @@ def update_sequence(
     action: str = Form("save"),
     name: str = Form(""),
     step_key: list[str] = Form(default=[]),
-    delay_days: list[str] = Form(default=[]),
+    delay_minutes: list[str] = Form(default=[]),
     subject: list[str] = Form(default=[]),
     body: list[str] = Form(default=[]),
     attachments: list[str] = Form(default=[]),
@@ -237,7 +265,7 @@ def update_sequence(
         return RedirectResponse(f"/sequences/{seq.id}/edit?msg=Name is required.", status_code=303)
 
     seq.name = name
-    seq.steps = _build_steps(step_key, delay_days, subject, body, attachments, source_template_id)
+    seq.steps = _build_steps(step_key, delay_minutes, subject, body, attachments, source_template_id)
     db.commit()
     return RedirectResponse(f"/sequences/{seq.id}/edit?msg=Sequence saved.", status_code=303)
 
