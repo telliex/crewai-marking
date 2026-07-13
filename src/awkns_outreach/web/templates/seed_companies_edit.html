@@ -50,7 +50,9 @@
   <h2 class="text-sm font-semibold mb-2">Import companies</h2>
   <form method="post" action="/campaigns/{{ c.id }}/companies" enctype="multipart/form-data" class="space-y-2">
     <input type="hidden" name="action" value="import">
-    <p class="text-xs text-slate-500">JSON array or CSV · columns: name, website, country, category, tier, angle</p>
+    <p class="text-xs text-slate-500">JSON array or CSV · columns: name, website, country, category, tier, angle ·
+      <a href="/campaigns/seed-template.csv" class="text-blue-600 hover:underline">Download template (CSV)</a>
+    </p>
     <input type="file" name="seed_file" accept=".json,.csv"
       class="block w-full text-sm file:mr-2 file:rounded file:border file:bg-white file:px-2 file:py-1">
     <textarea name="seed_text" rows="3" class="w-full border rounded px-2 py-1.5 font-mono text-xs"
