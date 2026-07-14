@@ -23,6 +23,15 @@
     color: #fff !important;
     border: none !important;
   }
+  /* The editor's wrapper is overflow-visible (so the format-help/link
+     popovers above aren't clipped) instead of overflow-hidden, so unlike a
+     plain <textarea> it won't scroll — multi-line body text just spills
+     past the box and overlaps whatever sits below it (e.g. "Insert
+     template") unless the box itself is tall enough to hold a few lines. */
+  #quill-editor,
+  .tw-quill-editor {
+    min-height: 160px;
+  }
 </style>
 <div class="tw-editor border rounded overflow-visible">
   <div class="tw-quill-toolbar flex flex-wrap items-center gap-1 border-b px-2 py-1.5 relative bg-slate-50"{% if legacy_ids %} id="quill-toolbar"{% endif %}>
