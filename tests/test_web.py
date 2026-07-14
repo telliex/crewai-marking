@@ -519,7 +519,8 @@ def test_convert_seed_companies_creates_leads(client, session, monkeypatch):
     auth = ("admin", "secret")
     c = Campaign(name="c", target_titles=[], seed_companies=[
         {"name": "Toyota", "email": "jamie@toyota.co.jp", "contact_name": "Jamie Rivera",
-         "contact_title": "VP Finance", "country": "JP", "tier": "A", "angle": "cars"},
+         "contact_title": "VP Finance", "country": "JP", "category": "automotive",
+         "tier": "A", "angle": "cars", "website": "toyota.co.jp"},
     ])
     session.add(c)
     session.commit()
@@ -534,9 +535,32 @@ def test_convert_seed_companies_creates_leads(client, session, monkeypatch):
     assert lead.contact_name == "Jamie Rivera"
     assert lead.contact_title == "VP Finance"
     assert lead.country == "JP"
+    assert lead.category == "automotive"
     assert lead.tier == "A"
     assert lead.angle == "cars"
+    assert lead.website == "toyota.co.jp"
     assert lead.step == 0 and lead.status == "active"
+
+
+def test_convert_seed_companies_maps_blank_optional_fields_to_none(client, session, monkeypatch):
+    monkeypatch.setattr(settings, "admin_password", "secret")
+    auth = ("admin", "secret")
+    c = Campaign(name="c", target_titles=[], seed_companies=[
+        {"name": "Toyota", "email": "jamie@toyota.co.jp"},
+    ])
+    session.add(c)
+    session.commit()
+
+    r = client.post(f"/campaigns/{c.id}/leads/from-seed-companies", auth=auth, follow_redirects=False)
+    assert r.status_code == 303
+    lead = session.query(Lead).one()
+    assert lead.contact_name is None
+    assert lead.contact_title is None
+    assert lead.country is None
+    assert lead.category is None
+    assert lead.tier is None
+    assert lead.angle is None
+    assert lead.website is None
 
 
 def test_convert_seed_companies_blocked_when_leads_already_exist(client, session, monkeypatch):
@@ -572,6 +596,24 @@ def test_campaign_page_shows_convert_card_only_when_no_leads(client, session, mo
 
     r2 = client.get(f"/campaigns/{c.id}", auth=auth)
     assert "Convert seed companies to leads" not in r2.text
+
+
+def test_campaign_page_hides_convert_card_on_tier_filter_even_if_that_tier_is_empty(client, session, monkeypatch):
+    # The card must gate on the campaign's TOTAL lead count, not the
+    # tier-filtered `leads` list — otherwise viewing an empty tier tab on a
+    # campaign that already has leads (just none in that tier) would show
+    # the card again even though conversion is blocked server-side either way.
+    monkeypatch.setattr(settings, "admin_password", "secret")
+    auth = ("admin", "secret")
+    c = Campaign(name="c", target_titles=[], seed_companies=[])
+    session.add(c)
+    session.flush()
+    session.add(Lead(campaign_id=c.id, email="x@y.com", company="X", tier="B", status="active"))
+    session.commit()
+
+    r = client.get(f"/campaigns/{c.id}?tier=A", auth=auth)
+    assert "x@y.com" not in r.text  # tier=A view shows none of this campaign's (tier B) leads...
+    assert "Convert seed companies to leads" not in r.text  # ...but the card must still stay hidden
 
 
 # --- run_sequencer route: no-running-task guard + happy path with a Task --

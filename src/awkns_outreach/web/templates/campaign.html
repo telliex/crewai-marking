@@ -67,7 +67,7 @@
     <p class="text-xs text-slate-400 mt-1">Unclassified leads are treated as Tier B when sending.</p>
   </form>
 
-  {% if not leads %}
+  {% if not tier_total %}
   <form method="post" action="/campaigns/{{ c.id }}/leads/from-seed-companies" class="rounded border bg-white p-3">
     <div class="text-xs font-medium text-slate-500 mb-2">Convert seed companies to leads</div>
     <p class="text-xs text-slate-400 mb-2 max-w-xs">Skip Apollo — every seed company needs an email first (<a href="/campaigns/{{ c.id }}/companies" class="underline">edit them here</a>).</p>
