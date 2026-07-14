@@ -464,6 +464,116 @@ def test_classify_route_404_for_unknown_campaign(client, monkeypatch):
     assert r.status_code == 404
 
 
+def test_convert_seed_companies_no_seed_companies(client, session, monkeypatch):
+    monkeypatch.setattr(settings, "admin_password", "secret")
+    auth = ("admin", "secret")
+    c = Campaign(name="c", target_titles=[], seed_companies=[])
+    session.add(c)
+    session.commit()
+
+    r = client.post(f"/campaigns/{c.id}/leads/from-seed-companies", auth=auth, follow_redirects=False)
+    assert r.status_code == 303
+    from urllib.parse import unquote
+    assert "No seed companies to convert." in unquote(r.headers["location"])
+    assert session.query(Lead).count() == 0
+
+
+def test_convert_seed_companies_blocks_when_missing_email(client, session, monkeypatch):
+    monkeypatch.setattr(settings, "admin_password", "secret")
+    auth = ("admin", "secret")
+    c = Campaign(name="c", target_titles=[], seed_companies=[
+        {"name": "Toyota", "email": "jamie@toyota.co.jp"},
+        {"name": "Sony"},
+    ])
+    session.add(c)
+    session.commit()
+
+    r = client.post(f"/campaigns/{c.id}/leads/from-seed-companies", auth=auth, follow_redirects=False)
+    assert r.status_code == 303
+    from urllib.parse import unquote
+    location = unquote(r.headers["location"])
+    assert "Convert failed" in location and "Sony" in location
+    assert session.query(Lead).count() == 0
+
+
+def test_convert_seed_companies_blocks_on_duplicate_email(client, session, monkeypatch):
+    monkeypatch.setattr(settings, "admin_password", "secret")
+    auth = ("admin", "secret")
+    c = Campaign(name="c", target_titles=[], seed_companies=[
+        {"name": "Toyota", "email": "jamie@toyota.co.jp"},
+        {"name": "Toyota JP", "email": "JAMIE@toyota.co.jp"},
+    ])
+    session.add(c)
+    session.commit()
+
+    r = client.post(f"/campaigns/{c.id}/leads/from-seed-companies", auth=auth, follow_redirects=False)
+    assert r.status_code == 303
+    from urllib.parse import unquote
+    location = unquote(r.headers["location"])
+    assert "duplicate email" in location and "jamie@toyota.co.jp" in location
+    assert session.query(Lead).count() == 0
+
+
+def test_convert_seed_companies_creates_leads(client, session, monkeypatch):
+    monkeypatch.setattr(settings, "admin_password", "secret")
+    auth = ("admin", "secret")
+    c = Campaign(name="c", target_titles=[], seed_companies=[
+        {"name": "Toyota", "email": "jamie@toyota.co.jp", "contact_name": "Jamie Rivera",
+         "contact_title": "VP Finance", "country": "JP", "tier": "A", "angle": "cars"},
+    ])
+    session.add(c)
+    session.commit()
+
+    r = client.post(f"/campaigns/{c.id}/leads/from-seed-companies", auth=auth, follow_redirects=False)
+    assert r.status_code == 303
+    from urllib.parse import unquote
+    assert "Converted 1 seed company to leads." in unquote(r.headers["location"])
+    lead = session.query(Lead).one()
+    assert lead.email == "jamie@toyota.co.jp"
+    assert lead.company == "Toyota"
+    assert lead.contact_name == "Jamie Rivera"
+    assert lead.contact_title == "VP Finance"
+    assert lead.country == "JP"
+    assert lead.tier == "A"
+    assert lead.angle == "cars"
+    assert lead.step == 0 and lead.status == "active"
+
+
+def test_convert_seed_companies_blocked_when_leads_already_exist(client, session, monkeypatch):
+    monkeypatch.setattr(settings, "admin_password", "secret")
+    auth = ("admin", "secret")
+    c = Campaign(name="c", target_titles=[], seed_companies=[
+        {"name": "Toyota", "email": "jamie@toyota.co.jp"},
+    ])
+    session.add(c)
+    session.flush()
+    session.add(Lead(campaign_id=c.id, email="existing@x.com", company="X", status="active"))
+    session.commit()
+
+    r = client.post(f"/campaigns/{c.id}/leads/from-seed-companies", auth=auth, follow_redirects=False)
+    assert r.status_code == 303
+    from urllib.parse import unquote
+    assert "already has leads" in unquote(r.headers["location"])
+    assert session.query(Lead).count() == 1
+
+
+def test_campaign_page_shows_convert_card_only_when_no_leads(client, session, monkeypatch):
+    monkeypatch.setattr(settings, "admin_password", "secret")
+    auth = ("admin", "secret")
+    c = Campaign(name="c", target_titles=[], seed_companies=[])
+    session.add(c)
+    session.commit()
+
+    r = client.get(f"/campaigns/{c.id}", auth=auth)
+    assert "Convert seed companies to leads" in r.text
+
+    session.add(Lead(campaign_id=c.id, email="x@y.com", company="X", status="active"))
+    session.commit()
+
+    r2 = client.get(f"/campaigns/{c.id}", auth=auth)
+    assert "Convert seed companies to leads" not in r2.text
+
+
 # --- run_sequencer route: no-running-task guard + happy path with a Task --
 
 

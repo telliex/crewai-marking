@@ -324,6 +324,53 @@ def run_classify(
     return RedirectResponse(f"/campaigns/{c.id}?msg={msg}", status_code=303)
 
 
+@router.post("/campaigns/{campaign_id}/leads/from-seed-companies")
+def convert_seed_companies_to_leads(
+    campaign_id: str,
+    db: Session = Depends(get_db),
+):
+    c = _get_campaign(db, campaign_id)
+    existing = db.scalar(
+        select(func.count()).select_from(Lead).where(Lead.campaign_id == c.id)
+    ) or 0
+    if existing > 0:
+        return RedirectResponse(
+            f"/campaigns/{c.id}?msg=Convert failed — this campaign already has leads.",
+            status_code=303,
+        )
+
+    rows = c.seed_companies or []
+    if not rows:
+        return RedirectResponse(f"/campaigns/{c.id}?msg=No seed companies to convert.", status_code=303)
+
+    missing = [r.get("name") or "(unnamed)" for r in rows if not (r.get("name") and r.get("email"))]
+    emails = [r["email"].strip().lower() for r in rows if r.get("email")]
+    dupes = sorted({e for e in emails if emails.count(e) > 1})
+    if missing or dupes:
+        parts = []
+        if missing:
+            parts.append(f"missing name/email: {', '.join(missing)}")
+        if dupes:
+            parts.append(f"duplicate email: {', '.join(dupes)}")
+        return RedirectResponse(
+            f"/campaigns/{c.id}?msg=Convert failed — {'; '.join(parts)}.", status_code=303,
+        )
+
+    for r in rows:
+        db.add(Lead(
+            campaign_id=c.id, email=r["email"].strip().lower(), company=r["name"].strip(),
+            contact_name=r.get("contact_name") or None, contact_title=r.get("contact_title") or None,
+            country=r.get("country") or None, category=r.get("category") or None,
+            tier=r.get("tier") or None, angle=r.get("angle") or None, website=r.get("website") or None,
+            step=0, status="active",
+        ))
+    db.commit()
+    plural = "y" if len(rows) == 1 else "ies"
+    return RedirectResponse(
+        f"/campaigns/{c.id}?msg=Converted {len(rows)} seed compan{plural} to leads.", status_code=303,
+    )
+
+
 @router.post("/campaigns/{campaign_id}/leads/{lead_id}/tier", response_class=HTMLResponse)
 def set_lead_tier(
     campaign_id: str, lead_id: str, request: Request,
