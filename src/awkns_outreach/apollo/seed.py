@@ -18,7 +18,10 @@ from typing import Any, Optional
 from awkns_outreach.apollo.client import domain_from_website
 
 # Canonical seed fields, in a stable order (used by the edit form too).
-SEED_FIELDS = ("name", "website", "country", "category", "tier", "angle")
+SEED_FIELDS = (
+    "name", "website", "country", "category", "tier", "angle",
+    "email", "contact_name", "contact_title",
+)
 
 # Accepted column/key aliases -> canonical field.
 _ALIASES = {
@@ -34,6 +37,11 @@ _ALIASES = {
     "priority": "tier",
     "tier": "tier",
     "angle": "angle",
+    "email": "email",
+    "contact_name": "contact_name",
+    "contact": "contact_name",
+    "contact_title": "contact_title",
+    "title": "contact_title",
 }
 
 

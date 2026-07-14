@@ -45,6 +45,27 @@ def test_parse_row_without_website_is_kept_but_has_no_domain():
     assert out == [{"name": "NoSite", "tier": "C"}]
 
 
+def test_parse_json_array_captures_email_and_contact_fields():
+    raw = (
+        '[{"name": "Toyota", "email": "jamie@toyota.co.jp",'
+        ' "contact_name": "Jamie Rivera", "contact_title": "VP Finance"}]'
+    )
+    out = parse_seed_companies(raw, None)
+    assert out == [{
+        "name": "Toyota", "email": "jamie@toyota.co.jp",
+        "contact_name": "Jamie Rivera", "contact_title": "VP Finance",
+    }]
+
+
+def test_parse_csv_accepts_contact_and_title_aliases():
+    raw = "name,email,contact,title\nToyota,jamie@toyota.co.jp,Jamie Rivera,VP Finance\n"
+    out = parse_seed_companies(raw, "seed.csv")
+    assert out == [{
+        "name": "Toyota", "email": "jamie@toyota.co.jp",
+        "contact_name": "Jamie Rivera", "contact_title": "VP Finance",
+    }]
+
+
 def test_parse_empty_returns_empty():
     assert parse_seed_companies("", None) == []
     assert parse_seed_companies("   ", "x.json") == []
