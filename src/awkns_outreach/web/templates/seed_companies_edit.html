@@ -55,7 +55,7 @@
   <h2 class="text-sm font-semibold mb-2">Import companies</h2>
   <form method="post" action="/campaigns/{{ c.id }}/companies" enctype="multipart/form-data" class="space-y-2">
     <input type="hidden" name="action" value="import">
-    <p class="text-xs text-slate-500">JSON array or CSV · columns: name, website, country, category, tier, angle ·
+    <p class="text-xs text-slate-500">JSON array or CSV · columns: name, website, country, category, tier, angle, email, contact_name, contact_title ·
       <a href="/campaigns/seed-template.csv" class="text-blue-600 hover:underline">Download template (CSV)</a>
     </p>
     <input type="file" name="seed_file" accept=".json,.csv"
