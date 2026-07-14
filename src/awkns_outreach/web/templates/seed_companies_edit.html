@@ -9,6 +9,9 @@
   <td class="px-2 py-1"><input name="category" value="{{ co.category or '' }}" class="w-full border rounded px-1.5 py-1 text-sm" placeholder="automotive"></td>
   <td class="px-2 py-1"><input name="tier" value="{{ co.tier or '' }}" class="w-16 border rounded px-1.5 py-1 text-sm" placeholder="A"></td>
   <td class="px-2 py-1"><input name="angle" value="{{ co.angle or '' }}" class="w-full border rounded px-1.5 py-1 text-sm" placeholder="why this fits them"></td>
+  <td class="px-2 py-1"><input name="email" value="{{ co.email or '' }}" class="w-full border rounded px-1.5 py-1 text-sm" placeholder="jamie@toyota.co.jp"></td>
+  <td class="px-2 py-1"><input name="contact_name" value="{{ co.contact_name or '' }}" class="w-full border rounded px-1.5 py-1 text-sm" placeholder="Jamie Rivera"></td>
+  <td class="px-2 py-1"><input name="contact_title" value="{{ co.contact_title or '' }}" class="w-full border rounded px-1.5 py-1 text-sm" placeholder="VP Finance"></td>
   <td class="px-2 py-1 text-right"><button type="button" onclick="removeRow(this)" class="text-xs text-red-600 hover:underline">Remove</button></td>
 </tr>
 {% endmacro %}
@@ -29,7 +32,9 @@
         <tr>
           <th class="px-2 py-2">Name</th><th class="px-2 py-2">Website</th>
           <th class="px-2 py-2">Country</th><th class="px-2 py-2">Category</th>
-          <th class="px-2 py-2">Tier</th><th class="px-2 py-2">Angle</th><th></th>
+          <th class="px-2 py-2">Tier</th><th class="px-2 py-2">Angle</th>
+          <th class="px-2 py-2">Email</th><th class="px-2 py-2">Contact</th>
+          <th class="px-2 py-2">Title</th><th></th>
         </tr>
       </thead>
       <tbody id="rows">

@@ -136,6 +136,45 @@ def test_seed_template_csv_download(client, monkeypatch):
     assert first_line.split(",") == list(admin.SEED_FIELDS)
 
 
+def test_edit_companies_form_renders_new_contact_columns(client, session, monkeypatch):
+    monkeypatch.setattr(settings, "admin_password", "secret")
+    auth = ("admin", "secret")
+    c = Campaign(name="c", target_titles=[], seed_companies=[
+        {"name": "Toyota", "email": "jamie@toyota.co.jp",
+         "contact_name": "Jamie Rivera", "contact_title": "VP Finance"},
+    ])
+    session.add(c)
+    session.commit()
+
+    r = client.get(f"/campaigns/{c.id}/companies", auth=auth)
+    assert r.status_code == 200
+    assert 'value="jamie@toyota.co.jp"' in r.text
+    assert 'value="Jamie Rivera"' in r.text
+    assert 'value="VP Finance"' in r.text
+
+
+def test_save_companies_persists_email_and_contact_fields(client, session, monkeypatch):
+    monkeypatch.setattr(settings, "admin_password", "secret")
+    auth = ("admin", "secret")
+    c = Campaign(name="c", target_titles=[], seed_companies=[])
+    session.add(c)
+    session.commit()
+
+    r = client.post(f"/campaigns/{c.id}/companies", auth=auth, data={
+        "action": "save",
+        "name": ["Toyota"], "website": [""], "country": [""], "category": [""],
+        "tier": [""], "angle": [""],
+        "email": ["jamie@toyota.co.jp"], "contact_name": ["Jamie Rivera"],
+        "contact_title": ["VP Finance"],
+    }, follow_redirects=False)
+    assert r.status_code == 303
+    session.refresh(c)
+    assert c.seed_companies == [{
+        "name": "Toyota", "email": "jamie@toyota.co.jp",
+        "contact_name": "Jamie Rivera", "contact_title": "VP Finance",
+    }]
+
+
 def test_legacy_sequence_editor_redirects_to_sequences(client, session, monkeypatch):
     monkeypatch.setattr(settings, "admin_password", "secret")
     auth = ("admin", "secret")

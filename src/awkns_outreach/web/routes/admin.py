@@ -119,6 +119,7 @@ def seed_template_csv():
     writer.writerow({
         "name": "Toyota", "website": "toyota.co.jp", "country": "JP",
         "category": "automotive", "tier": "A", "angle": "why this fits them",
+        "email": "jamie@toyota.co.jp", "contact_name": "Jamie Rivera", "contact_title": "VP Finance",
     })
     writer.writerow({
         "name": "Acme Barbershop", "website": "acmebarbershop.com",
@@ -411,6 +412,9 @@ def save_companies(
     category: list[str] = Form(default=[]),
     tier: list[str] = Form(default=[]),
     angle: list[str] = Form(default=[]),
+    email: list[str] = Form(default=[]),
+    contact_name: list[str] = Form(default=[]),
+    contact_title: list[str] = Form(default=[]),
     db: Session = Depends(get_db),
 ):
     c = _get_campaign(db, campaign_id)
@@ -434,6 +438,7 @@ def save_companies(
         rows = _rows_from_form({
             "name": name, "website": website, "country": country,
             "category": category, "tier": tier, "angle": angle,
+            "email": email, "contact_name": contact_name, "contact_title": contact_title,
         })
         c.seed_companies = rows
         msg = f"Saved {len(rows)} companies."
