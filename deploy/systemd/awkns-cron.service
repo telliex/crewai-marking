@@ -1,0 +1,15 @@
+[Unit]
+Description=Awkns Outreach - sequencer scheduler (send loop)
+After=network.target awkns-web.service
+
+[Service]
+Type=simple
+User=awkns
+WorkingDirectory=/opt/awkns-outreach
+EnvironmentFile=/opt/awkns-outreach/.env
+ExecStart=/opt/awkns-outreach/.venv/bin/outreach cron --send --interval 1 --max 5 --poll-interval 5
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,15 @@
+[Unit]
+Description=Awkns Outreach - web app
+After=network.target
+
+[Service]
+Type=simple
+User=awkns
+WorkingDirectory=/opt/awkns-outreach
+EnvironmentFile=/opt/awkns-outreach/.env
+ExecStart=/opt/awkns-outreach/.venv/bin/uvicorn awkns_outreach.web.app:app --host 0.0.0.0 --port 8000
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
