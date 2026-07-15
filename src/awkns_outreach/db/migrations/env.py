@@ -12,7 +12,10 @@ from awkns_outreach.db.session import Base
 from awkns_outreach.db import models  # noqa: F401  (register tables on Base)
 
 config = context.config
-config.set_main_option("sqlalchemy.url", settings.database_url)
+# configparser (used internally by alembic.config.Config) treats "%" as the
+# start of a %(name)s interpolation token, so a literal "%" in the URL (e.g.
+# from a percent-encoded password) must be escaped as "%%" before it's stored.
+config.set_main_option("sqlalchemy.url", settings.database_url.replace("%", "%%"))
 
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)
