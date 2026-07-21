@@ -12,7 +12,6 @@ from awkns_outreach.compliance import make_unsub_token
 from awkns_outreach.config import settings
 from awkns_outreach.db.models import Campaign, Event, Lead, MailSequence, Suppression, Task
 from awkns_outreach.db.session import Base, get_db
-from awkns_outreach.sequencer.engine import RunSummary
 from awkns_outreach.web.app import app
 from awkns_outreach.web.routes import admin
 from awkns_outreach.web.stats import campaign_stats
@@ -634,68 +633,6 @@ def test_campaign_page_hides_convert_card_on_tier_filter_even_if_that_tier_is_em
     r = client.get(f"/campaigns/{c.id}?tier=A", auth=auth)
     assert "x@y.com" not in r.text  # tier=A view shows none of this campaign's (tier B) leads...
     assert "Convert seed companies to leads" not in r.text  # ...but the card must still stay hidden
-
-
-# --- run_sequencer route: no-running-task guard + happy path with a Task --
-
-
-def test_run_sequencer_blocks_when_no_running_task(client, session, monkeypatch):
-    monkeypatch.setattr(settings, "admin_password", "secret")
-    auth = ("admin", "secret")
-    c = Campaign(name="c", target_titles=[], seed_companies=[])
-    session.add(c)
-    session.commit()
-
-    def boom(*a, **kw):
-        raise AssertionError("process_campaign must not be called with no running Task")
-
-    monkeypatch.setattr(admin, "process_campaign", boom)
-
-    r = client.post(f"/campaigns/{c.id}/run", auth=auth, data={}, follow_redirects=False)
-    assert r.status_code == 303
-    from urllib.parse import unquote
-    location = unquote(r.headers["location"])
-    assert location == f"/campaigns/{c.id}?msg=Blocked: no running task for this campaign."
-
-
-def test_run_sequencer_runs_when_task_is_running(client, session, monkeypatch):
-    monkeypatch.setattr(settings, "admin_password", "secret")
-    auth = ("admin", "secret")
-    c = Campaign(name="c", target_titles=[], seed_companies=[])
-    session.add(c)
-    session.flush()
-    steps_by_tier = {"A": [{"subject": "Hi {{first_name}}", "body": "Hello"}]}
-    task = Task(
-        name="t1", campaign_id=c.id, status="running", steps_by_tier=steps_by_tier,
-    )
-    session.add(task)
-    session.add(Lead(campaign_id=c.id, email="a@x.com", company="X", status="active", tier="A"))
-    session.commit()
-
-    canned = RunSummary(
-        dry_run=True, considered=1, sent=1, skipped=0, suppressed=0, errors=0,
-        cap=5, sent_last_24h=0, daily_remaining=4,
-    )
-    calls = []
-
-    def fake_process_campaign(db, campaign, steps, **kw):
-        calls.append((campaign.id, steps, kw))
-        return canned
-
-    monkeypatch.setattr(admin, "process_campaign", fake_process_campaign)
-
-    r = client.post(f"/campaigns/{c.id}/run", auth=auth, data={}, follow_redirects=False)
-    assert r.status_code == 303
-    from urllib.parse import unquote
-    location = unquote(r.headers["location"])
-    assert location.startswith(f"/campaigns/{c.id}?msg=")
-    assert "DRY-RUN: sent 1, skipped 0, suppressed 0, errors 0 (cap 5, remaining 4)." in location
-
-    assert len(calls) == 1
-    called_campaign_id, called_steps, called_kwargs = calls[0]
-    assert called_campaign_id == c.id
-    assert called_steps == steps_by_tier
-    assert called_kwargs["dry_run"] is True
 
 
 def test_inline_tier_sets_and_clears_value(client, session, monkeypatch):

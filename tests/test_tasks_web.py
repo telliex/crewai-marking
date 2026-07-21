@@ -14,7 +14,9 @@ from sqlalchemy.pool import StaticPool
 from awkns_outreach.config import settings
 from awkns_outreach.db.models import Campaign, Lead, MailSequence, Task
 from awkns_outreach.db.session import Base, get_db
+from awkns_outreach.sequencer.engine import RunSummary
 from awkns_outreach.web.app import app
+from awkns_outreach.web.routes import tasks
 
 AUTH = ("admin", "secret")
 UTC = timezone.utc
@@ -461,6 +463,55 @@ def test_tasks_page_no_drift_warning_when_running_and_campaign_active(client, se
     r = client.get("/tasks", auth=AUTH)
     assert r.status_code == 200
     assert "drift" not in r.text.lower()
+
+
+# --- run: dry-run / send-for-real console, moved here from the campaign page --
+
+
+def test_run_task_blocks_when_not_running(client, session, monkeypatch):
+    c = _make_campaign(session)
+    task = _make_task(session, c, status="draft")
+
+    def boom(*a, **kw):
+        raise AssertionError("process_campaign must not be called for a non-running Task")
+
+    monkeypatch.setattr(tasks, "process_campaign", boom)
+
+    r = client.post(f"/tasks/{task.id}/run", auth=AUTH, data={}, follow_redirects=False)
+    assert r.status_code == 303
+    assert r.headers["location"] == "/tasks?msg=Task%20isn't%20running."
+
+
+def test_run_task_runs_when_status_running(client, session, monkeypatch):
+    c = _make_campaign(session)
+    steps_by_tier = {"A": [{"subject": "Hi {{first_name}}", "body": "Hello"}]}
+    task = _make_task(session, c, status="running", steps_by_tier=steps_by_tier)
+    _make_lead(session, c, tier="A")
+
+    canned = RunSummary(
+        dry_run=True, considered=1, sent=1, skipped=0, suppressed=0, errors=0,
+        cap=5, sent_last_24h=0, daily_remaining=4,
+    )
+    calls = []
+
+    def fake_process_campaign(db, campaign, steps, **kw):
+        calls.append((campaign.id, steps, kw))
+        return canned
+
+    monkeypatch.setattr(tasks, "process_campaign", fake_process_campaign)
+
+    r = client.post(f"/tasks/{task.id}/run", auth=AUTH, data={}, follow_redirects=False)
+    assert r.status_code == 303
+    from urllib.parse import unquote
+    location = unquote(r.headers["location"])
+    assert location.startswith("/tasks?msg=")
+    assert "DRY-RUN: sent 1, skipped 0, suppressed 0, errors 0 (cap 5, remaining 4)." in location
+
+    assert len(calls) == 1
+    called_campaign_id, called_steps, called_kwargs = calls[0]
+    assert called_campaign_id == c.id
+    assert called_steps == steps_by_tier
+    assert called_kwargs["dry_run"] is True
 
 
 def test_lifecycle_unknown_action_returns_400(client, session):

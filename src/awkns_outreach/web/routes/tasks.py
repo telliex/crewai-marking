@@ -18,7 +18,7 @@ from sqlalchemy.orm import Session
 from fastapi.responses import HTMLResponse, RedirectResponse
 
 from awkns_outreach.db.models import Campaign, Lead, MailSequence, Task
-from awkns_outreach.sequencer import lifecycle
+from awkns_outreach.sequencer import lifecycle, process_campaign
 from awkns_outreach.web.deps import get_db, require_admin, templates
 
 router = APIRouter(dependencies=[Depends(require_admin)])
@@ -279,6 +279,28 @@ def schedule_task_route(
 def unschedule_task_route(task_id: str, db: Session = Depends(get_db)):
     task = _get_task(db, task_id)
     _ok, msg = lifecycle.unschedule_task(db, task)
+    return RedirectResponse(f"/tasks?msg={msg}", status_code=303)
+
+
+@router.post("/tasks/{task_id}/run")
+def run_task(
+    task_id: str,
+    send: str = Form(""),
+    max_this_run: int = Form(5),
+    db: Session = Depends(get_db),
+):
+    task = _get_task(db, task_id)
+    if task.status != "running":
+        return RedirectResponse("/tasks?msg=Task isn't running.", status_code=303)
+    dry = not bool(send)
+    s = process_campaign(
+        db, task.campaign, task.steps_by_tier, dry_run=dry, max_this_run=max_this_run, gap_ms=0,
+    )
+    mode = "DRY-RUN" if dry else "SENT"
+    if s.blocked:
+        msg = f"Blocked: {s.blocked}"
+    else:
+        msg = f"{mode}: sent {s.sent}, skipped {s.skipped}, suppressed {s.suppressed}, errors {s.errors} (cap {s.cap}, remaining {s.daily_remaining})."
     return RedirectResponse(f"/tasks?msg={msg}", status_code=303)
 
 

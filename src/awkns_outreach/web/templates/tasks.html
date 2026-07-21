@@ -124,6 +124,13 @@
               <input type="hidden" name="action" value="stop">
               <button type="submit" class="text-red-700 hover:underline">Stop</button>
             </form>
+            <form method="post" action="/tasks/{{ t.id }}/run" class="inline-flex items-center gap-1">
+              <label class="text-xs text-slate-500">Max
+                <input name="max_this_run" type="number" value="5" class="w-14 border rounded px-1 py-0.5 text-xs">
+              </label>
+              <label class="text-xs text-slate-500"><input name="send" type="checkbox" value="1"> send for real</label>
+              <button type="submit" class="rounded bg-slate-900 text-white text-xs px-2 py-1">Run</button>
+            </form>
             {% elif t.status == 'paused' %}
             <form method="post" action="/tasks/{{ t.id }}/lifecycle" class="inline">
               <input type="hidden" name="action" value="resume">
