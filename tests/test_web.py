@@ -438,6 +438,26 @@ def test_classify_route_redirects_with_summary_msg(client, session, monkeypatch)
     assert "skipped 2" in location and "failed batches 1" in location
 
 
+def test_enrich_route_surfaces_runtime_error(client, session, monkeypatch):
+    monkeypatch.setattr(settings, "admin_password", "secret")
+    auth = ("admin", "secret")
+    c = Campaign(name="c", target_titles=[], seed_companies=[])
+    session.add(c)
+    session.commit()
+
+    def boom(*a, **kw):
+        raise RuntimeError("Apollo /mixed_people/api_search 403: not accessible on a free plan.")
+
+    monkeypatch.setattr(admin, "enrich_campaign", boom)
+
+    r = client.post(f"/campaigns/{c.id}/enrich", auth=auth, data={}, follow_redirects=False)
+    assert r.status_code == 303
+    from urllib.parse import unquote
+    location = unquote(r.headers["location"])
+    assert "Enrich failed" in location
+    assert "free plan" in location
+
+
 def test_classify_route_surfaces_runtime_error(client, session, monkeypatch):
     monkeypatch.setattr(settings, "admin_password", "secret")
     auth = ("admin", "secret")

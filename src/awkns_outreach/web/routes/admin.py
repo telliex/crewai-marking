@@ -296,7 +296,10 @@ def run_enrich(
     db: Session = Depends(get_db),
 ):
     c = _get_campaign(db, campaign_id)
-    summary = enrich_campaign(db, c, reveal=bool(reveal), limit=limit)
+    try:
+        summary = enrich_campaign(db, c, reveal=bool(reveal), limit=limit)
+    except RuntimeError as exc:
+        return RedirectResponse(f"/campaigns/{c.id}?msg=Enrich failed: {exc}", status_code=303)
     db.commit()
     verb = "revealed" if reveal else "found (preview)"
     msg = f"Enrich: {summary.total_found} {verb}; created {summary.created}, skipped {summary.skipped_existing}."
