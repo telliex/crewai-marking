@@ -89,7 +89,7 @@
     <thead class="bg-slate-100 text-slate-500 text-left">
       <tr>
         <th class="px-3 py-2">Email</th><th class="px-3 py-2">Company</th>
-        <th class="px-3 py-2">Contact</th><th class="px-3 py-2">Tier</th>
+        <th class="px-3 py-2">Contact</th><th class="px-3 py-2">Country</th><th class="px-3 py-2">Tier</th>
         <th class="px-3 py-2">Step</th>
         <th class="px-3 py-2">Status</th><th class="px-3 py-2">Next action</th>
       </tr>
@@ -100,13 +100,14 @@
         <td class="px-3 py-2">{{ l.email }}</td>
         <td class="px-3 py-2">{{ l.company }}</td>
         <td class="px-3 py-2">{{ l.contact_name or "—" }}{% if l.contact_title %} <span class="text-slate-400">· {{ l.contact_title }}</span>{% endif %}</td>
+        <td class="px-3 py-2 text-slate-500">{{ l.country or "—" }}</td>
         <td class="px-3 py-2">{% include "_lead_tier_cell.html" %}</td>
         <td class="px-3 py-2">{{ l.step }}</td>
         <td class="px-3 py-2"><span class="rounded px-1.5 py-0.5 text-xs bg-slate-100">{{ l.status }}</span></td>
         <td class="px-3 py-2 text-slate-500">{{ l.next_action_at.strftime("%Y-%m-%d") if l.next_action_at else "—" }}</td>
       </tr>
       {% else %}
-      <tr><td colspan="7" class="px-3 py-4 text-slate-400">No leads yet — run enrich with “reveal”.</td></tr>
+      <tr><td colspan="8" class="px-3 py-4 text-slate-400">No leads yet — run enrich with “reveal”.</td></tr>
       {% endfor %}
     </tbody>
   </table>
