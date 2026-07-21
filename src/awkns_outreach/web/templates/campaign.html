@@ -96,7 +96,7 @@
         <td class="px-3 py-2 text-slate-500">{{ l.country or "—" }}</td>
         <td class="px-3 py-2">{% include "_lead_tier_cell.html" %}</td>
         <td class="px-3 py-2">{{ l.step }}</td>
-        <td class="px-3 py-2"><span class="rounded px-1.5 py-0.5 text-xs bg-slate-100">{{ l.status }}</span></td>
+        <td class="px-3 py-2">{% include "_lead_status_cell.html" %}</td>
         <td class="px-3 py-2 text-slate-500">{{ l.next_action_at.strftime("%Y-%m-%d") if l.next_action_at else "—" }}</td>
       </tr>
       {% else %}

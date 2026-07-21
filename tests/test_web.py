@@ -695,6 +695,85 @@ def test_inline_tier_404_when_lead_belongs_to_another_campaign(client, session, 
     assert r.status_code == 404
 
 
+def test_inline_status_pauses_and_resumes_lead(client, session, monkeypatch):
+    monkeypatch.setattr(settings, "admin_password", "secret")
+    auth = ("admin", "secret")
+    c = Campaign(name="c", target_titles=[], seed_companies=[])
+    session.add(c)
+    session.flush()
+    lead = Lead(campaign_id=c.id, email="a@b.com", company="X", status="active")
+    session.add(lead)
+    session.commit()
+
+    r = client.post(
+        f"/campaigns/{c.id}/leads/{lead.id}/status", auth=auth, data={"status": "paused"},
+    )
+    assert r.status_code == 200
+    assert "paused" in r.text
+    assert "resume" in r.text
+    session.refresh(lead)
+    assert lead.status == "paused"
+
+    r2 = client.post(
+        f"/campaigns/{c.id}/leads/{lead.id}/status", auth=auth, data={"status": "active"},
+    )
+    assert r2.status_code == 200
+    assert "pause" in r2.text
+    session.refresh(lead)
+    assert lead.status == "active"
+
+
+def test_inline_status_400_on_bad_value(client, session, monkeypatch):
+    monkeypatch.setattr(settings, "admin_password", "secret")
+    auth = ("admin", "secret")
+    c = Campaign(name="c", target_titles=[], seed_companies=[])
+    session.add(c)
+    session.flush()
+    lead = Lead(campaign_id=c.id, email="a@b.com", company="X", status="active")
+    session.add(lead)
+    session.commit()
+
+    r = client.post(
+        f"/campaigns/{c.id}/leads/{lead.id}/status", auth=auth, data={"status": "completed"},
+    )
+    assert r.status_code == 400
+
+
+def test_inline_status_400_when_lead_in_system_driven_status(client, session, monkeypatch):
+    monkeypatch.setattr(settings, "admin_password", "secret")
+    auth = ("admin", "secret")
+    c = Campaign(name="c", target_titles=[], seed_companies=[])
+    session.add(c)
+    session.flush()
+    lead = Lead(campaign_id=c.id, email="a@b.com", company="X", status="bounced")
+    session.add(lead)
+    session.commit()
+
+    r = client.post(
+        f"/campaigns/{c.id}/leads/{lead.id}/status", auth=auth, data={"status": "active"},
+    )
+    assert r.status_code == 400
+    session.refresh(lead)
+    assert lead.status == "bounced"
+
+
+def test_inline_status_404_when_lead_belongs_to_another_campaign(client, session, monkeypatch):
+    monkeypatch.setattr(settings, "admin_password", "secret")
+    auth = ("admin", "secret")
+    c1 = Campaign(name="c1", target_titles=[], seed_companies=[])
+    c2 = Campaign(name="c2", target_titles=[], seed_companies=[])
+    session.add_all([c1, c2])
+    session.flush()
+    lead = Lead(campaign_id=c1.id, email="a@b.com", company="X", status="active")
+    session.add(lead)
+    session.commit()
+
+    r = client.post(
+        f"/campaigns/{c2.id}/leads/{lead.id}/status", auth=auth, data={"status": "paused"},
+    )
+    assert r.status_code == 404
+
+
 def test_campaign_detail_tier_filter_and_counts(client, session, monkeypatch):
     monkeypatch.setattr(settings, "admin_password", "secret")
     auth = ("admin", "secret")

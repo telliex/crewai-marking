@@ -394,6 +394,32 @@ def set_lead_tier(
     )
 
 
+# Manual pause/resume only toggles between these two statuses — every other
+# status (sending/completed/replied/bounced/suppressed/failed) is system-
+# driven and not meant to be hand-edited from this control.
+_MANUAL_LEAD_STATUSES = ("active", "paused")
+
+
+@router.post("/campaigns/{campaign_id}/leads/{lead_id}/status", response_class=HTMLResponse)
+def set_lead_status(
+    campaign_id: str, lead_id: str, request: Request,
+    status: str = Form(...), db: Session = Depends(get_db),
+):
+    c = _get_campaign(db, campaign_id)
+    lead = db.get(Lead, lead_id)
+    if not lead or lead.campaign_id != c.id:
+        raise HTTPException(404, "Lead not found")
+    if status not in _MANUAL_LEAD_STATUSES:
+        raise HTTPException(400, f"Invalid status: {status!r}")
+    if lead.status not in _MANUAL_LEAD_STATUSES:
+        raise HTTPException(400, f"Lead can't be manually toggled while {lead.status}.")
+    lead.status = status
+    db.commit()
+    return templates.TemplateResponse(
+        request, "_lead_status_cell.html", {"c": c, "l": lead},
+    )
+
+
 @router.get("/campaigns/{campaign_id}/sequence")
 def edit_sequence_form(campaign_id: str, db: Session = Depends(get_db)):
     _get_campaign(db, campaign_id)  # 404s if the campaign doesn't exist, same as before

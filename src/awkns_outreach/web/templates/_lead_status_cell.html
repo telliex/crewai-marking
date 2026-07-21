@@ -1,0 +1,16 @@
+<span class="rounded px-1.5 py-0.5 text-xs bg-slate-100">{{ l.status }}</span>
+{% if l.status == "active" %}
+<button type="button"
+        class="text-xs text-slate-500 hover:underline ml-1"
+        hx-post="/campaigns/{{ c.id }}/leads/{{ l.id }}/status"
+        hx-vals='{"status": "paused"}'
+        hx-target="closest td"
+        hx-swap="innerHTML">pause</button>
+{% elif l.status == "paused" %}
+<button type="button"
+        class="text-xs text-slate-500 hover:underline ml-1"
+        hx-post="/campaigns/{{ c.id }}/leads/{{ l.id }}/status"
+        hx-vals='{"status": "active"}'
+        hx-target="closest td"
+        hx-swap="innerHTML">resume</button>
+{% endif %}
