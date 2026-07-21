@@ -50,7 +50,19 @@ migration and re-run.
 
 ## One-time provisioning
 
-Run as `ubuntu` on a fresh Ubuntu 24.04 instance.
+**Automated path:** clone the repo, then run `deploy/provision.sh` — it performs
+every step below and is idempotent (on the first run it creates `.env` and
+pauses for you to fill in secrets; edit it, then re-run to finish):
+
+```bash
+git clone https://github.com/telliex/crewai-marking.git /opt/awkns-outreach
+/opt/awkns-outreach/deploy/provision.sh          # creates .env, then stops
+nano /opt/awkns-outreach/.env                    # fill in real values
+/opt/awkns-outreach/deploy/provision.sh          # finishes: migrate + services
+```
+
+The manual steps below document what the script does (run as `ubuntu` on a fresh
+Ubuntu 24.04 instance).
 
 ### 1. System packages + uv
 
