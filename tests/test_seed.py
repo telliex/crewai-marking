@@ -74,3 +74,25 @@ def test_parse_empty_returns_empty():
 def test_parse_bad_json_raises():
     with pytest.raises(ValueError):
         parse_seed_companies("{not json", "x.json")
+
+
+def test_parse_json_row_missing_name_raises_with_row_number():
+    raw = '[{"name": "Toyota", "website": "toyota.co.jp"}, {"website": "sony.co.jp"}]'
+    with pytest.raises(ValueError, match="row 2: missing required field 'name'"):
+        parse_seed_companies(raw, None)
+
+
+def test_parse_csv_row_missing_name_raises_with_row_number():
+    raw = "name,website\nToyota,toyota.co.jp\n,sony.co.jp\n"
+    with pytest.raises(ValueError, match="row 2: missing required field 'name'"):
+        parse_seed_companies(raw, "seed.csv")
+
+
+def test_parse_multiple_bad_rows_lists_every_row_in_one_error():
+    raw = '[{"website": "a.com"}, {"name": "Ok"}, {"website": "b.com"}]'
+    with pytest.raises(ValueError) as exc_info:
+        parse_seed_companies(raw, None)
+    message = str(exc_info.value)
+    assert "row 1: missing required field 'name'" in message
+    assert "row 3: missing required field 'name'" in message
+    assert "row 2" not in message  # the valid row must not be reported

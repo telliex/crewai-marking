@@ -99,8 +99,15 @@ def parse_seed_companies(raw: str, filename: Optional[str] = None) -> list[dict[
         records = [dict(r) for r in reader]
 
     out: list[dict[str, str]] = []
-    for record in records:
+    errors: list[str] = []
+    for i, record in enumerate(records, start=1):
         cleaned = _clean_row(record)
-        if cleaned:
-            out.append(cleaned)
+        if not cleaned:
+            continue
+        if not cleaned.get("name"):
+            errors.append(f"row {i}: missing required field 'name'")
+            continue
+        out.append(cleaned)
+    if errors:
+        raise ValueError("; ".join(errors))
     return out
