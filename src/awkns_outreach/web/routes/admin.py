@@ -133,6 +133,7 @@ def seed_template_csv():
 
 @router.post("/campaigns")
 def create_campaign(
+    request: Request,
     name: str = Form(...),
     titles: str = Form(""),
     angle_prompt: str = Form(""),
@@ -142,10 +143,17 @@ def create_campaign(
 ):
     try:
         seed_companies = _read_seed_input(seed_file, seed_text)
-        import_note = ""
     except ValueError as exc:
-        seed_companies = []
-        import_note = f" (seed import failed: {exc} — add companies on the edit page)"
+        return templates.TemplateResponse(
+            request, "new_campaign.html",
+            {
+                "msg": f"Seed import failed: {exc}",
+                "name": name,
+                "titles": titles,
+                "angle_prompt": angle_prompt,
+                "seed_text": seed_text,
+            },
+        )
     c = Campaign(
         name=name.strip(),
         target_titles=_split_lines(titles),
@@ -155,7 +163,7 @@ def create_campaign(
     )
     db.add(c)
     db.commit()
-    msg = f"Campaign created with {len(seed_companies)} seed companies.{import_note}"
+    msg = f"Campaign created with {len(seed_companies)} seed companies."
     return RedirectResponse(f"/campaigns/{c.id}?msg={msg}", status_code=303)
 
 

@@ -7,12 +7,12 @@
 <form method="post" action="/campaigns" enctype="multipart/form-data" class="max-w-xl space-y-4">
   <div>
     <label class="block text-sm font-medium mb-1">Name</label>
-    <input name="name" required class="w-full border rounded px-2 py-1.5" placeholder="e.g. JP animation studios">
+    <input name="name" required value="{{ name or '' }}" class="w-full border rounded px-2 py-1.5" placeholder="e.g. JP animation studios">
   </div>
   <div>
     <label class="block text-sm font-medium mb-1">Target titles</label>
     <textarea name="titles" rows="3" class="w-full border rounded px-2 py-1.5"
-      placeholder="one per line, or comma-separated&#10;creative director&#10;head of content"></textarea>
+      placeholder="one per line, or comma-separated&#10;creative director&#10;head of content">{{ titles or '' }}</textarea>
   </div>
   <div>
     <label class="block text-sm font-medium mb-1">Seed companies <span class="text-slate-400 font-normal">(optional — add or edit later)</span></label>
@@ -24,14 +24,14 @@
     <input type="file" name="seed_file" accept=".json,.csv"
       class="block w-full text-sm mb-2 file:mr-2 file:rounded file:border file:bg-white file:px-2 file:py-1">
     <textarea name="seed_text" rows="4" class="w-full border rounded px-2 py-1.5 font-mono text-xs"
-      placeholder='…or paste JSON/CSV here, e.g.&#10;[{"name":"Toyota","website":"toyota.co.jp","country":"JP","tier":"A","email":"jamie@toyota.co.jp","contact_name":"Jamie Rivera"}]'></textarea>
+      placeholder='…or paste JSON/CSV here, e.g.&#10;[{"name":"Toyota","website":"toyota.co.jp","country":"JP","tier":"A","email":"jamie@toyota.co.jp","contact_name":"Jamie Rivera"}]'>{{ seed_text or '' }}</textarea>
     <button type="button" onclick="copyJsonExample(this)" data-json-example='[{"name":"Toyota","website":"toyota.co.jp","country":"JP","tier":"A","email":"jamie@toyota.co.jp","contact_name":"Jamie Rivera"}]'
       class="mt-1 text-xs text-blue-600 hover:underline">Copy JSON example</button>
   </div>
   <div>
     <label class="block text-sm font-medium mb-1">Angle prompt <span class="text-slate-400 font-normal">(optional)</span></label>
     <textarea name="angle_prompt" rows="2" class="w-full border rounded px-2 py-1.5"
-      placeholder="Leave blank to use the default research prompt."></textarea>
+      placeholder="Leave blank to use the default research prompt.">{{ angle_prompt or '' }}</textarea>
   </div>
   <button class="rounded bg-slate-900 text-white text-sm px-4 py-2">Create campaign</button>
 </form>

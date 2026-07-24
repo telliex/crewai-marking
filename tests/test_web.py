@@ -123,6 +123,39 @@ def test_admin_create_and_view_campaign(client, session, monkeypatch):
     assert detail.status_code == 200 and "JP studios" in detail.text
 
 
+def test_create_campaign_blocks_on_malformed_seed_and_prefills_form(client, session, monkeypatch):
+    monkeypatch.setattr(settings, "admin_password", "secret")
+    auth = ("admin", "secret")
+    r = client.post("/campaigns", auth=auth, data={
+        "name": "JP studios",
+        "titles": "creative director",
+        "seed_text": '[{"name":"Toyota","website":"toyota.jp,"country":"JP"}]',
+        "angle_prompt": "",
+    }, follow_redirects=False)
+
+    assert r.status_code == 200  # re-rendered form, not a redirect
+    assert session.query(Campaign).count() == 0  # nothing created
+    assert "Seed import failed" in r.text
+    assert 'value="JP studios"' in r.text  # name preserved
+    assert "creative director" in r.text  # titles preserved
+    assert "toyota.jp" in r.text  # seed_text preserved
+
+
+def test_create_campaign_with_missing_name_row_blocks_creation(client, session, monkeypatch):
+    monkeypatch.setattr(settings, "admin_password", "secret")
+    auth = ("admin", "secret")
+    r = client.post("/campaigns", auth=auth, data={
+        "name": "JP studios",
+        "titles": "",
+        "seed_text": '[{"website": "toyota.co.jp"}]',
+        "angle_prompt": "",
+    }, follow_redirects=False)
+
+    assert r.status_code == 200
+    assert session.query(Campaign).count() == 0
+    assert "missing required field" in r.text
+
+
 def test_seed_template_csv_download(client, monkeypatch):
     monkeypatch.setattr(settings, "admin_password", "secret")
     auth = ("admin", "secret")
