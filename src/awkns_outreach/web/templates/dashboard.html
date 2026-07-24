@@ -74,6 +74,13 @@
               <input type="hidden" name="page" value="{{ page }}">
               <button class="text-blue-700 hover:underline">Unarchive</button>
             </form>
+            <form method="post" action="/campaigns/{{ c.id }}/status"
+              onsubmit="return confirm('Delete “{{ c.name }}” permanently? This also deletes its leads and can\'t be undone.');">
+              <input type="hidden" name="action" value="delete">
+              <input type="hidden" name="status" value="{{ status_filter }}">
+              <input type="hidden" name="page" value="{{ page }}">
+              <button class="text-red-700 hover:underline">Delete</button>
+            </form>
             {% else %}
             <a href="/campaigns/{{ c.id }}/edit" class="text-blue-700 hover:underline">Edit</a>
             {% if c.status == "active" %}

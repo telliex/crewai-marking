@@ -182,11 +182,20 @@ def change_campaign_status(
     page: int = Form(1),
     db: Session = Depends(get_db),
 ):
-    """Archive / unarchive / pause / resume — one endpoint, a whitelisted
-    transition table. A no-op transition (e.g. pausing an already-paused
-    campaign) just redirects with a message, no error. Redirects back to the
-    operator's filtered/paginated dashboard view."""
+    """Archive / unarchive / pause / resume / delete — one endpoint, a
+    whitelisted transition table. A no-op transition (e.g. pausing an
+    already-paused campaign) just redirects with a message, no error.
+    Redirects back to the operator's filtered/paginated dashboard view."""
     c = _get_campaign(db, campaign_id)
+    if action == "delete":
+        if c.status != "archived":
+            msg = f"Campaign “{c.name}” must be archived before it can be deleted."
+        else:
+            name = c.name
+            db.delete(c)
+            db.commit()
+            msg = f"Campaign “{name}” deleted."
+        return RedirectResponse(f"/?status={status}&page={page}&msg={msg}", status_code=303)
     transitions = _STATUS_TRANSITIONS.get(action)
     if transitions is None:
         raise HTTPException(400, f"Unknown action: {action}")

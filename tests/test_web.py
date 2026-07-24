@@ -314,6 +314,40 @@ def test_status_pause_resume_invalid_action_and_noop(client, session, monkeypatc
     assert c.status == "active"
 
 
+def test_status_delete_blocked_unless_archived(client, session, monkeypatch):
+    monkeypatch.setattr(settings, "admin_password", "secret")
+    auth = ("admin", "secret")
+    c = Campaign(name="Widgets", target_titles=[], seed_companies=[], status="active")
+    session.add(c)
+    session.commit()
+    campaign_id = c.id
+
+    r = client.post(f"/campaigns/{campaign_id}/status", auth=auth, follow_redirects=False,
+                    data={"action": "delete", "status": "default", "page": "1"})
+    assert r.status_code == 303
+    assert session.get(Campaign, campaign_id) is not None
+
+
+def test_status_delete_removes_archived_campaign_and_cascades(client, session, monkeypatch):
+    monkeypatch.setattr(settings, "admin_password", "secret")
+    auth = ("admin", "secret")
+    c = Campaign(name="Widgets", target_titles=[], seed_companies=[], status="archived")
+    session.add(c)
+    session.commit()
+    campaign_id = c.id
+    lead = Lead(campaign_id=campaign_id, email="jamie@toyota.co.jp", company="Toyota")
+    session.add(lead)
+    session.commit()
+
+    r = client.post(f"/campaigns/{campaign_id}/status", auth=auth, follow_redirects=False,
+                    data={"action": "delete", "status": "archived", "page": "1"})
+    assert r.status_code == 303
+    assert r.headers["location"].startswith("/?status=archived&page=1")
+    session.expunge_all()
+    assert session.get(Campaign, campaign_id) is None
+    assert session.get(Lead, lead.id) is None
+
+
 def test_campaign_status_change_mirrors_onto_task(client, session, monkeypatch):
     """The dashboard's own pause/resume/archive buttons must not leave a
     campaign's running/paused Task status silently out of sync with the
