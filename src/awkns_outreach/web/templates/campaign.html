@@ -56,6 +56,9 @@
     <label class="text-xs">Limit <input name="limit" type="number" value="10" class="w-16 border rounded px-1 py-0.5"></label>
     <label class="text-xs ml-2"><input name="reveal" type="checkbox" value="1"> reveal (spends credits)</label>
     <button class="ml-2 rounded bg-slate-900 text-white text-xs px-2 py-1">Run</button>
+    {% if enrich_result %}
+    <button type="button" id="enrich-review-btn" class="ml-2 rounded border text-xs px-2 py-1">Review</button>
+    {% endif %}
   </form>
 
   <form method="post" action="/campaigns/{{ c.id }}/classify" class="rounded border bg-white p-3">
@@ -75,6 +78,56 @@
   </form>
   {% endif %}
 </div>
+
+{% if enrich_result %}
+<dialog id="enrich-dialog" class="rounded border p-0 max-w-2xl w-full">
+  <div class="p-4">
+    <div class="flex items-center justify-between mb-3">
+      <h2 class="text-sm font-semibold">
+        Apollo enrich — {{ enrich_result.total_found }} found
+        {% if enrich_result.reveal %}({{ enrich_result.created }} created, {{ enrich_result.updated }} updated){% endif %}
+      </h2>
+      <button type="button" id="enrich-dialog-close" class="text-xs text-slate-500">Close</button>
+    </div>
+    <table class="w-full text-sm">
+      <thead class="text-slate-500 text-left">
+        <tr>
+          <th class="py-1">Name</th><th class="py-1">Title</th><th class="py-1">Company</th>
+          <th class="py-1">Email</th>
+          <th class="py-1">{% if enrich_result.reveal %}Outcome{% else %}Status{% endif %}</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in enrich_result.candidates %}
+        <tr class="border-t">
+          <td class="py-1">{{ row.name or "—" }}</td>
+          <td class="py-1">{{ row.title or "—" }}</td>
+          <td class="py-1">{{ row.company or "—" }}</td>
+          {% if enrich_result.reveal %}
+          <td class="py-1">{{ row.email }}</td>
+          <td class="py-1">{{ row.outcome }}</td>
+          {% else %}
+          <td class="py-1">{{ row.email_masked }}</td>
+          <td class="py-1">{{ row.email_status or "—" }}</td>
+          {% endif %}
+        </tr>
+        {% else %}
+        <tr><td colspan="5" class="py-2 text-slate-400">No candidates.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</dialog>
+<script>
+  (function () {
+    var dialog = document.getElementById("enrich-dialog");
+    dialog.showModal();
+    document.getElementById("enrich-dialog-close").addEventListener("click", function () { dialog.close(); });
+    var reviewBtn = document.getElementById("enrich-review-btn");
+    if (reviewBtn) reviewBtn.addEventListener("click", function () { dialog.showModal(); });
+  })();
+</script>
+{% endif %}
 
 <h2 class="text-sm font-semibold mb-2">Leads ({{ leads|length }})</h2>
 <div class="mb-3 flex flex-wrap gap-3 text-xs">

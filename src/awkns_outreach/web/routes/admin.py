@@ -270,14 +270,7 @@ def save_campaign_edit(
 _TIER_FILTERS = ("A", "B", "C", "unclassified")
 
 
-@router.get("/campaigns/{campaign_id}", response_class=HTMLResponse)
-def campaign_detail(
-    campaign_id: str, request: Request, db: Session = Depends(get_db),
-    msg: Optional[str] = None, tier: Optional[str] = None,
-):
-    c = _get_campaign(db, campaign_id)
-    tier_filter = tier if tier in _TIER_FILTERS else None
-
+def _campaign_detail_ctx(db: Session, c: Campaign, tier_filter: Optional[str] = None) -> dict:
     counts = dict(
         db.execute(
             select(Lead.tier, func.count())
@@ -295,18 +288,28 @@ def campaign_detail(
         stmt = stmt.where(Lead.tier == tier_filter)
     leads = db.scalars(stmt.order_by(Lead.created_at.desc()).limit(200)).all()
 
-    return templates.TemplateResponse(
-        request, "campaign.html",
-        {
-            "c": c, "stats": campaign_stats(db, c), "leads": leads, "msg": msg,
-            "tier_filter": tier_filter, "tier_counts": tier_counts, "tier_total": tier_total,
-        },
-    )
+    return {
+        "c": c, "stats": campaign_stats(db, c), "leads": leads,
+        "tier_filter": tier_filter, "tier_counts": tier_counts, "tier_total": tier_total,
+    }
 
 
-@router.post("/campaigns/{campaign_id}/enrich")
+@router.get("/campaigns/{campaign_id}", response_class=HTMLResponse)
+def campaign_detail(
+    campaign_id: str, request: Request, db: Session = Depends(get_db),
+    msg: Optional[str] = None, tier: Optional[str] = None,
+):
+    c = _get_campaign(db, campaign_id)
+    tier_filter = tier if tier in _TIER_FILTERS else None
+    ctx = _campaign_detail_ctx(db, c, tier_filter)
+    ctx["msg"] = msg
+    return templates.TemplateResponse(request, "campaign.html", ctx)
+
+
+@router.post("/campaigns/{campaign_id}/enrich", response_class=HTMLResponse)
 def run_enrich(
     campaign_id: str,
+    request: Request,
     reveal: str = Form(""),
     limit: int = Form(10),
     db: Session = Depends(get_db),
@@ -319,7 +322,10 @@ def run_enrich(
     db.commit()
     verb = "revealed" if reveal else "found (preview)"
     msg = f"Enrich: {summary.total_found} {verb}; created {summary.created}, skipped {summary.skipped_existing}."
-    return RedirectResponse(f"/campaigns/{c.id}?msg={msg}", status_code=303)
+    ctx = _campaign_detail_ctx(db, c)
+    ctx["msg"] = msg
+    ctx["enrich_result"] = summary
+    return templates.TemplateResponse(request, "campaign.html", ctx)
 
 
 @router.post("/campaigns/{campaign_id}/classify")

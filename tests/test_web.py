@@ -15,6 +15,7 @@ from awkns_outreach.db.session import Base, get_db
 from awkns_outreach.web.app import app
 from awkns_outreach.web.routes import admin
 from awkns_outreach.web.stats import campaign_stats
+from awkns_outreach.apollo.enrich import EnrichSummary
 from awkns_outreach.writer.tiers import TierSummary
 
 
@@ -522,6 +523,67 @@ def test_enrich_route_surfaces_runtime_error(client, session, monkeypatch):
     location = unquote(r.headers["location"])
     assert "Enrich failed" in location
     assert "free plan" in location
+
+
+def test_enrich_route_renders_preview_candidates_in_page(client, session, monkeypatch):
+    monkeypatch.setattr(settings, "admin_password", "secret")
+    auth = ("admin", "secret")
+    c = Campaign(name="Widgets", target_titles=[], seed_companies=[])
+    session.add(c)
+    session.commit()
+
+    canned = EnrichSummary(
+        reveal=False, total_found=1,
+        candidates=[{
+            "apollo_id": "abc123", "name": "Kenji Tanaka", "title": "Creative Director",
+            "company": "Toyota", "email_status": "verified",
+            "email_masked": "kenji@email_not_unlocked@toyota.co.jp",
+        }],
+    )
+    monkeypatch.setattr(admin, "enrich_campaign", lambda *a, **kw: canned)
+
+    r = client.post(f"/campaigns/{c.id}/enrich", auth=auth, data={"limit": "10"}, follow_redirects=False)
+    assert r.status_code == 200
+    assert "Kenji Tanaka" in r.text
+    assert "kenji@email_not_unlocked@toyota.co.jp" in r.text
+    assert 'id="enrich-dialog"' in r.text
+    assert "Review" in r.text
+
+
+def test_enrich_route_renders_reveal_outcomes_in_page(client, session, monkeypatch):
+    monkeypatch.setattr(settings, "admin_password", "secret")
+    auth = ("admin", "secret")
+    c = Campaign(name="Widgets", target_titles=[], seed_companies=[])
+    session.add(c)
+    session.commit()
+
+    canned = EnrichSummary(
+        reveal=True, total_found=1, unlocked=1, created=1,
+        candidates=[{
+            "name": "Kenji Tanaka", "title": "Creative Director", "company": "Toyota",
+            "email": "k.tanaka@toyota.co.jp", "outcome": "created",
+        }],
+    )
+    monkeypatch.setattr(admin, "enrich_campaign", lambda *a, **kw: canned)
+
+    r = client.post(f"/campaigns/{c.id}/enrich", auth=auth,
+                     data={"limit": "10", "reveal": "1"}, follow_redirects=False)
+    assert r.status_code == 200
+    assert "k.tanaka@toyota.co.jp" in r.text
+    assert "created" in r.text
+
+
+def test_campaign_detail_has_no_enrich_modal_by_default(client, session, monkeypatch):
+    monkeypatch.setattr(settings, "admin_password", "secret")
+    auth = ("admin", "secret")
+    c = Campaign(name="Widgets", target_titles=[], seed_companies=[])
+    session.add(c)
+    session.commit()
+
+    r = client.get(f"/campaigns/{c.id}", auth=auth)
+    assert r.status_code == 200
+    assert 'id="enrich-dialog"' not in r.text
+    assert "enrich-review-btn" not in r.text
 
 
 def test_classify_route_surfaces_runtime_error(client, session, monkeypatch):
