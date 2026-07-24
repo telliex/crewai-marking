@@ -554,6 +554,29 @@ def test_convert_seed_companies_preview_writes_nothing(client, session, monkeypa
     assert session.query(Lead).count() == 0
 
 
+def test_convert_seed_companies_preview_caps_company_name_list(client, session, monkeypatch):
+    monkeypatch.setattr(settings, "admin_password", "secret")
+    auth = ("admin", "secret")
+    c = Campaign(name="c", target_titles=[], seed_companies=[
+        {"name": f"Company {i}", "email": f"c{i}@x.com"} for i in range(7)
+    ])
+    session.add(c)
+    session.commit()
+
+    r = client.post(
+        f"/campaigns/{c.id}/leads/from-seed-companies", auth=auth,
+        data={}, follow_redirects=False,
+    )
+    assert r.status_code == 303
+    from urllib.parse import unquote
+    location = unquote(r.headers["location"])
+    assert "Company 0, Company 1, Company 2, Company 3, Company 4" in location
+    assert "and 2 more" in location
+    assert "Company 5" not in location
+    assert "Company 6" not in location
+    assert session.query(Lead).count() == 0
+
+
 def test_convert_seed_companies_blocks_when_missing_email(client, session, monkeypatch):
     monkeypatch.setattr(settings, "admin_password", "secret")
     auth = ("admin", "secret")

@@ -369,10 +369,13 @@ def convert_seed_companies_to_leads(
 
     plural = "y" if len(rows) == 1 else "ies"
     if not confirm:
-        names = ", ".join(r["name"].strip() for r in rows)
+        names = [r["name"].strip() for r in rows]
+        preview_names = ", ".join(names[:5])
+        if len(names) > 5:
+            preview_names += f", and {len(names) - 5} more"
         msg = (
             f"Preview: would convert {len(rows)} seed compan{plural} to leads "
-            f"({names}). Nothing saved — check “confirm” and click Convert again to save."
+            f"({preview_names}). Nothing saved — check “confirm” and click Convert again to save."
         )
         return RedirectResponse(f"/campaigns/{c.id}?msg={msg}", status_code=303)
 
