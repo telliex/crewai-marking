@@ -42,11 +42,30 @@
 
 <script>
   function copyJsonExample(btn) {
-    navigator.clipboard.writeText(btn.dataset.jsonExample).then(() => {
+    const text = btn.dataset.jsonExample;
+    const flash = (label) => {
       const original = btn.textContent;
-      btn.textContent = 'Copied!';
+      btn.textContent = label;
       setTimeout(() => { btn.textContent = original; }, 1500);
-    });
+    };
+    const fallbackCopy = () => {
+      const ta = document.createElement('textarea');
+      ta.value = text;
+      ta.style.position = 'fixed';
+      ta.style.opacity = '0';
+      document.body.appendChild(ta);
+      ta.focus();
+      ta.select();
+      let ok = false;
+      try { ok = document.execCommand('copy'); } catch (e) { ok = false; }
+      document.body.removeChild(ta);
+      flash(ok ? 'Copied!' : 'Copy failed');
+    };
+    if (navigator.clipboard && window.isSecureContext) {
+      navigator.clipboard.writeText(text).then(() => flash('Copied!'), fallbackCopy);
+    } else {
+      fallbackCopy();
+    }
   }
 </script>
 {% endblock %}
