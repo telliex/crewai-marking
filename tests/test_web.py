@@ -523,10 +523,34 @@ def test_convert_seed_companies_no_seed_companies(client, session, monkeypatch):
     session.add(c)
     session.commit()
 
-    r = client.post(f"/campaigns/{c.id}/leads/from-seed-companies", auth=auth, follow_redirects=False)
+    r = client.post(
+        f"/campaigns/{c.id}/leads/from-seed-companies", auth=auth,
+        data={}, follow_redirects=False,
+    )
     assert r.status_code == 303
     from urllib.parse import unquote
     assert "No seed companies to convert." in unquote(r.headers["location"])
+    assert session.query(Lead).count() == 0
+
+
+def test_convert_seed_companies_preview_writes_nothing(client, session, monkeypatch):
+    monkeypatch.setattr(settings, "admin_password", "secret")
+    auth = ("admin", "secret")
+    c = Campaign(name="c", target_titles=[], seed_companies=[
+        {"name": "Toyota", "email": "jamie@toyota.co.jp"},
+    ])
+    session.add(c)
+    session.commit()
+
+    r = client.post(
+        f"/campaigns/{c.id}/leads/from-seed-companies", auth=auth,
+        data={}, follow_redirects=False,
+    )
+    assert r.status_code == 303
+    from urllib.parse import unquote
+    location = unquote(r.headers["location"])
+    assert "Preview: would convert 1 seed company to leads (Toyota)" in location
+    assert "Nothing saved" in location
     assert session.query(Lead).count() == 0
 
 
@@ -540,7 +564,10 @@ def test_convert_seed_companies_blocks_when_missing_email(client, session, monke
     session.add(c)
     session.commit()
 
-    r = client.post(f"/campaigns/{c.id}/leads/from-seed-companies", auth=auth, follow_redirects=False)
+    r = client.post(
+        f"/campaigns/{c.id}/leads/from-seed-companies", auth=auth,
+        data={}, follow_redirects=False,
+    )
     assert r.status_code == 303
     from urllib.parse import unquote
     location = unquote(r.headers["location"])
@@ -558,7 +585,10 @@ def test_convert_seed_companies_blocks_on_duplicate_email(client, session, monke
     session.add(c)
     session.commit()
 
-    r = client.post(f"/campaigns/{c.id}/leads/from-seed-companies", auth=auth, follow_redirects=False)
+    r = client.post(
+        f"/campaigns/{c.id}/leads/from-seed-companies", auth=auth,
+        data={}, follow_redirects=False,
+    )
     assert r.status_code == 303
     from urllib.parse import unquote
     location = unquote(r.headers["location"])
@@ -577,7 +607,10 @@ def test_convert_seed_companies_creates_leads(client, session, monkeypatch):
     session.add(c)
     session.commit()
 
-    r = client.post(f"/campaigns/{c.id}/leads/from-seed-companies", auth=auth, follow_redirects=False)
+    r = client.post(
+        f"/campaigns/{c.id}/leads/from-seed-companies", auth=auth,
+        data={"confirm": "1"}, follow_redirects=False,
+    )
     assert r.status_code == 303
     from urllib.parse import unquote
     assert "Converted 1 seed company to leads." in unquote(r.headers["location"])
@@ -603,7 +636,10 @@ def test_convert_seed_companies_maps_blank_optional_fields_to_none(client, sessi
     session.add(c)
     session.commit()
 
-    r = client.post(f"/campaigns/{c.id}/leads/from-seed-companies", auth=auth, follow_redirects=False)
+    r = client.post(
+        f"/campaigns/{c.id}/leads/from-seed-companies", auth=auth,
+        data={"confirm": "1"}, follow_redirects=False,
+    )
     assert r.status_code == 303
     lead = session.query(Lead).one()
     assert lead.contact_name is None
@@ -626,7 +662,10 @@ def test_convert_seed_companies_blocked_when_leads_already_exist(client, session
     session.add(Lead(campaign_id=c.id, email="existing@x.com", company="X", status="active"))
     session.commit()
 
-    r = client.post(f"/campaigns/{c.id}/leads/from-seed-companies", auth=auth, follow_redirects=False)
+    r = client.post(
+        f"/campaigns/{c.id}/leads/from-seed-companies", auth=auth,
+        data={}, follow_redirects=False,
+    )
     assert r.status_code == 303
     from urllib.parse import unquote
     assert "already has leads" in unquote(r.headers["location"])

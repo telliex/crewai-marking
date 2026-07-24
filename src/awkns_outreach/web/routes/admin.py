@@ -337,6 +337,7 @@ def run_classify(
 @router.post("/campaigns/{campaign_id}/leads/from-seed-companies")
 def convert_seed_companies_to_leads(
     campaign_id: str,
+    confirm: Optional[str] = Form(None),
     db: Session = Depends(get_db),
 ):
     c = _get_campaign(db, campaign_id)
@@ -366,6 +367,15 @@ def convert_seed_companies_to_leads(
             f"/campaigns/{c.id}?msg=Convert failed — {'; '.join(parts)}.", status_code=303,
         )
 
+    plural = "y" if len(rows) == 1 else "ies"
+    if not confirm:
+        names = ", ".join(r["name"].strip() for r in rows)
+        msg = (
+            f"Preview: would convert {len(rows)} seed compan{plural} to leads "
+            f"({names}). Nothing saved — check “confirm” and click Convert again to save."
+        )
+        return RedirectResponse(f"/campaigns/{c.id}?msg={msg}", status_code=303)
+
     for r in rows:
         db.add(Lead(
             campaign_id=c.id, email=r["email"].strip().lower(), company=r["name"].strip(),
@@ -375,7 +385,6 @@ def convert_seed_companies_to_leads(
             step=0, status="active",
         ))
     db.commit()
-    plural = "y" if len(rows) == 1 else "ies"
     return RedirectResponse(
         f"/campaigns/{c.id}?msg=Converted {len(rows)} seed compan{plural} to leads.", status_code=303,
     )
