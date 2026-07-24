@@ -30,7 +30,9 @@ echo "==> [2/5] Syncing dependencies (uv sync --frozen --no-dev)"
 uv sync --frozen --no-dev
 
 echo "==> [3/5] Running database migrations (alembic upgrade head)"
-uv run alembic upgrade head
+# --no-dev so this `uv run` doesn't re-sync the dev packages that step 2 just
+# removed (otherwise every deploy churns pytest et al. back in).
+uv run --no-dev alembic upgrade head
 
 echo "==> [4/5] Restarting services"
 sudo systemctl restart awkns-web awkns-cron
