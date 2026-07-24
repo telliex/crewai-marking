@@ -25,6 +25,8 @@
       class="block w-full text-sm mb-2 file:mr-2 file:rounded file:border file:bg-white file:px-2 file:py-1">
     <textarea name="seed_text" rows="4" class="w-full border rounded px-2 py-1.5 font-mono text-xs"
       placeholder='…or paste JSON/CSV here, e.g.&#10;[{"name":"Toyota","website":"toyota.co.jp","country":"JP","tier":"A","email":"jamie@toyota.co.jp","contact_name":"Jamie Rivera"}]'></textarea>
+    <button type="button" onclick="copyJsonExample(this)" data-json-example='[{"name":"Toyota","website":"toyota.co.jp","country":"JP","tier":"A","email":"jamie@toyota.co.jp","contact_name":"Jamie Rivera"}]'
+      class="mt-1 text-xs text-blue-600 hover:underline">Copy JSON example</button>
   </div>
   <div>
     <label class="block text-sm font-medium mb-1">Angle prompt <span class="text-slate-400 font-normal">(optional)</span></label>
@@ -37,4 +39,14 @@
   Seed companies can be edited field-by-field after creation. Sequence copy &amp;
   sender identity are edited on the campaign after creation (JSON for now; a form is a follow-up).
 </p>
+
+<script>
+  function copyJsonExample(btn) {
+    navigator.clipboard.writeText(btn.dataset.jsonExample).then(() => {
+      const original = btn.textContent;
+      btn.textContent = 'Copied!';
+      setTimeout(() => { btn.textContent = original; }, 1500);
+    });
+  }
+</script>
 {% endblock %}
