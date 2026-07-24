@@ -127,6 +127,59 @@ def test_enrich_reveal_creates_leads_idempotently(db_session):
 
 
 @respx.mock
+def test_enrich_reveal_records_candidate_outcome_rows(db_session):
+    respx.post(f"{BASE}/mixed_people/api_search").mock(
+        return_value=httpx.Response(200, json={
+            "people": [{"id": "abc123", "title": "Creative Director",
+                        "email": "kenji@email_not_unlocked@toyota.co.jp",
+                        "organization": {"name": "Toyota"}}],
+            "pagination": {"total_entries": 1}})
+    )
+    respx.post(f"{BASE}/people/bulk_match").mock(
+        return_value=httpx.Response(200, json={"matches": [
+            {"id": "abc123", "name": "Kenji Tanaka", "email": "K.Tanaka@Toyota.co.jp",
+             "title": "Creative Director", "organization": {"name": "Toyota"}}]})
+    )
+    c = _campaign(db_session)
+
+    s1 = enrich_campaign(db_session, c, reveal=True, limit=10)
+    assert s1.candidates == [
+        {"name": "Kenji Tanaka", "title": "Creative Director", "company": "Toyota",
+         "email": "k.tanaka@toyota.co.jp", "outcome": "created"}
+    ]
+
+    s2 = enrich_campaign(db_session, c, reveal=True, limit=10)  # re-run: lead already exists
+    assert s2.candidates == [
+        {"name": "Kenji Tanaka", "title": "Creative Director", "company": "Toyota",
+         "email": "k.tanaka@toyota.co.jp", "outcome": "updated"}
+    ]
+
+
+@respx.mock
+def test_enrich_reveal_omits_candidates_without_real_email(db_session):
+    respx.post(f"{BASE}/mixed_people/api_search").mock(
+        return_value=httpx.Response(200, json={
+            "people": [{"id": "abc123", "title": "Creative Director",
+                        "email": "kenji@email_not_unlocked@toyota.co.jp",
+                        "organization": {"name": "Toyota"}}],
+            "pagination": {"total_entries": 1}})
+    )
+    respx.post(f"{BASE}/people/bulk_match").mock(
+        return_value=httpx.Response(200, json={"matches": [
+            {"id": "abc123", "name": "Kenji Tanaka",
+             "email": "kenji@email_not_unlocked@toyota.co.jp",  # bulk_match still didn't unlock it
+             "title": "Creative Director", "organization": {"name": "Toyota"}}]})
+    )
+    c = _campaign(db_session)
+
+    summary = enrich_campaign(db_session, c, reveal=True, limit=10)
+    assert summary.total_found == 1
+    assert summary.unlocked == 0
+    assert summary.candidates == []
+    assert db_session.query(Lead).count() == 0
+
+
+@respx.mock
 def test_enrich_carries_seed_metadata_and_apollo_overwrites(db_session):
     # Apollo reports a different company name than the seed; Apollo wins.
     respx.post(f"{BASE}/mixed_people/api_search").mock(

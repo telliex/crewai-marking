@@ -152,28 +152,41 @@ def enrich_campaign(
         matched.extend(bulk_match(ids[i : i + 10]))
     summary.unlocked = sum(1 for p in matched if has_real_email(p.email))
 
+    # Reveal mode: replace the masked search-phase preview with one outcome
+    # row per unlocked person (name/title/company/real email/created|updated).
+    # People bulk_match couldn't unlock a real email for get no row here —
+    # they still count toward total_found/unlocked above.
+    reveal_rows: list[dict[str, Any]] = []
     for person in matched:
         if not has_real_email(person.email):
             continue
         seed = seed_by_id.get(person.id, {})
-        outcome = _upsert_lead(session, campaign, person, seed)
+        outcome, fields = _upsert_lead(session, campaign, person, seed)
         if outcome == "created":
             summary.created += 1
-        elif outcome == "updated":
-            summary.updated += 1
         else:
-            summary.skipped_existing += 1
+            summary.updated += 1
+        reveal_rows.append({
+            "name": person.name,
+            "title": person.title,
+            "company": fields["company"],
+            "email": (person.email or "").strip().lower(),
+            "outcome": outcome,
+        })
+    summary.candidates = reveal_rows
     session.flush()
     return summary
 
 
 def _upsert_lead(
     session: Session, campaign: Campaign, person: ApolloPerson, seed: dict[str, Any]
-) -> str:
-    """Insert or refresh a lead for this email. Returns "created" | "updated".
+) -> tuple[str, dict[str, Any]]:
+    """Insert or refresh a lead for this email. Returns (outcome, merged fields).
 
-    New lead: all merged fields. Existing lead: refresh Apollo facts; only
-    backfill tier/angle if they are still empty (don't clobber edits).
+    outcome is "created" for a brand-new lead or "updated" when one already
+    existed for this email — new lead: all merged fields; existing lead:
+    refresh Apollo facts, only backfill tier/angle if still empty (don't
+    clobber edits).
     """
     email = (person.email or "").strip().lower()
     fields = _merge_fields(seed, person)
@@ -190,7 +203,7 @@ def _upsert_lead(
                 **fields,
             )
         )
-        return "created"
+        return "created", fields
 
     # Refresh Apollo-derived facts (overwrite only when Apollo has a value).
     for key in ("apollo_person_id", "company", "contact_name", "contact_title",
@@ -202,4 +215,4 @@ def _upsert_lead(
     for key in ("tier", "angle"):
         if fields.get(key) and not getattr(existing, key):
             setattr(existing, key, fields[key])
-    return "updated"
+    return "updated", fields
