@@ -7,6 +7,7 @@ no web client."""
 from datetime import datetime, timedelta, timezone
 
 from awkns_outreach.db.models import Campaign, MailSequence, Task
+from awkns_outreach.runner import run_all_campaigns
 from awkns_outreach.send.mailer import SendResult
 from awkns_outreach.sequencer import engine, lifecycle
 
@@ -526,3 +527,25 @@ def test_task_send_window_flags_default_false(db_session):
     task = _task(db_session, c)
     assert task.ignore_business_hours is False
     assert task.ignore_workdays is False
+
+
+def test_runner_forwards_ignore_flags(db_session, monkeypatch):
+    monkeypatch.setattr(
+        engine, "send_outreach_email",
+        lambda l, c, e, s, steps, dry_run: SendResult(ok=True, id="m1", subject="s"),
+    )
+    sat_night = datetime(2026, 7, 25, 14, 0, tzinfo=UTC)  # Sat 22:00 Taipei
+    c = _campaign(db_session)
+    seq = _seq(db_session)
+    task = _task(db_session, c, sequences={"B": seq.id},
+                 ignore_business_hours=True, ignore_workdays=True)
+    lifecycle.start_task(db_session, task, sat_night)
+    from awkns_outreach.db.models import Lead
+    db_session.add(Lead(campaign_id=c.id, email="w@x.com", company="X",
+                        status="active", step=0, tier="B", country="TW"))
+    db_session.commit()
+
+    results = run_all_campaigns(db_session, dry_run=False, max_this_run=5,
+                                gap_ms=0, now=sat_night)
+    total_sent = sum(s.sent for _c, s in results)
+    assert total_sent == 1
