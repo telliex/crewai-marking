@@ -518,3 +518,10 @@ def test_end_to_end_start_send_complete_and_reuse_campaign(db_session, monkeypat
     assert s2.sent == 1
     db_session.refresh(lead)
     assert lead.step == 1 and lead.status == "completed"
+
+
+def test_task_send_window_flags_default_false(db_session):
+    c = _campaign(db_session)
+    task = _task(db_session, c)
+    assert task.ignore_business_hours is False
+    assert task.ignore_workdays is False
