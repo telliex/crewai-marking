@@ -58,10 +58,14 @@ def warmup_cap(warmup_start: Optional[datetime], now: datetime) -> int:
     return SEND.hard_daily_cap
 
 
-def in_business_hours(now: datetime, country: Optional[str]) -> bool:
-    """True if `now` falls inside the recipient's local Mon–Fri 09:00–17:00 window."""
+def in_send_window(
+    now: datetime, country: Optional[str], *,
+    ignore_hours: bool = False, ignore_days: bool = False,
+) -> bool:
+    """True if `now` is inside the recipient's local send window. By default
+    that's Mon–Fri 09:00–17:00; `ignore_days` drops the weekday check and
+    `ignore_hours` drops the time-of-day check (each independently)."""
     local = now.astimezone(ZoneInfo(tz_for(country)))
-    return (
-        local.weekday() in SEND.send_days
-        and SEND.send_hours[0] <= local.hour < SEND.send_hours[1]
-    )
+    day_ok = ignore_days or local.weekday() in SEND.send_days
+    hour_ok = ignore_hours or SEND.send_hours[0] <= local.hour < SEND.send_hours[1]
+    return day_ok and hour_ok

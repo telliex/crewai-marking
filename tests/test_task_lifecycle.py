@@ -383,7 +383,8 @@ def test_stop_then_dashboard_resume_does_not_resend(db_session, monkeypatch):
     db_session.commit()
 
     summary = engine.process_campaign(
-        db_session, c, task.steps_by_tier, dry_run=False, now=NOW, ignore_hours=True, gap_ms=0,
+        db_session, c, task.steps_by_tier, dry_run=False, now=NOW,
+        ignore_business_hours=True, ignore_workdays=True, gap_ms=0,
     )
     assert summary.blocked == "no steps"
     assert summary.sent == 0
@@ -494,7 +495,7 @@ def test_end_to_end_start_send_complete_and_reuse_campaign(db_session, monkeypat
     assert ok and task1.steps_by_tier == {"B": STEPS} and c.status == "active"
 
     s = engine.process_campaign(db_session, c, task1.steps_by_tier, dry_run=False, now=NOW,
-                                ignore_hours=True, gap_ms=0)
+                                ignore_business_hours=True, ignore_workdays=True, gap_ms=0)
     assert s.sent == 1
     db_session.refresh(lead)
     assert lead.step == 1 and lead.status == "completed"  # single-step sequence
@@ -513,7 +514,7 @@ def test_end_to_end_start_send_complete_and_reuse_campaign(db_session, monkeypat
 
     s2 = engine.process_campaign(
         db_session, c, task2.steps_by_tier, dry_run=False, now=NOW + timedelta(days=1),
-        ignore_hours=True, gap_ms=0,
+        ignore_business_hours=True, ignore_workdays=True, gap_ms=0,
     )
     assert s2.sent == 1
     db_session.refresh(lead)
