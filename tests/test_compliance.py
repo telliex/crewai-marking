@@ -5,6 +5,7 @@ import respx
 from awkns_outreach import compliance
 from awkns_outreach.compliance import (
     can_send_legally,
+    footer_html,
     footer_text,
     is_suppressed,
     list_unsubscribe_headers,
@@ -48,6 +49,20 @@ def test_list_unsubscribe_headers_one_click():
 def test_footer_includes_postal_address():
     assert "1 Test St, Taipei" in footer_text("a@b.com", _IDENT)
     assert "Unsubscribe" in footer_text("a@b.com", _IDENT)
+
+
+def test_footer_html_bold_heading_and_muted_contact_line():
+    html = footer_html("a@b.com", _IDENT)
+    assert '<div style="font-weight:600;color:#202124">Steven Wu · Awkns</div>' in html
+    assert "1 Test St, Taipei" in html
+    assert "Unsubscribe" in html
+    assert html.index("Steven Wu · Awkns") < html.index("1 Test St, Taipei")
+
+
+def test_footer_html_no_address_omits_dangling_separator():
+    html = footer_html("a@b.com", _NO_ADDR)
+    assert "Unsubscribe" in html
+    assert " · <a href" not in html
 
 
 def test_legal_gate():

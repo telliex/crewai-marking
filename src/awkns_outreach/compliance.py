@@ -88,12 +88,13 @@ def footer_text(email: str, identity: Optional[Identity] = None) -> str:
 
 def footer_html(email: str, identity: Optional[Identity] = None) -> str:
     ident = identity or resolve_identity()
-    addr = f"{escape(ident.postal_address)}<br>" if ident.postal_address else ""
+    addr = f"{escape(ident.postal_address)} · " if ident.postal_address else ""
     return (
-        '<br><br><div style="color:#9aa0a6;font-size:12px;line-height:1.5">—<br>'
-        f"{escape(ident.sender_name)} · {escape(ident.company)}<br>{addr}"
+        '<br><br><div style="font-size:13px;line-height:1.6">'
+        f'<div style="font-weight:600;color:#202124">{escape(ident.sender_name)} · {escape(ident.company)}</div>'
+        f'<div style="color:#9aa0a6;font-size:12px">{addr}'
         f'<a href="{unsubscribe_url(email)}" style="color:#9aa0a6">Unsubscribe</a> '
-        "and I won't email again.</div>"
+        "and I won't email again.</div></div>"
     )
 
 
