@@ -205,6 +205,22 @@
     if (e.key === 'Escape') closeAllConnectorPopovers();
   });
 
+  // Every step's subject/body share the same field names inside one <form>, so
+  // htmx's request for a preview/test-send serializes the WHOLE form — sending
+  // `subject`/`body` once per step. The server binds those to the LAST value,
+  // so every step's preview rendered the last step's copy and non-last steps
+  // never reflected their own edits. Scope these three fields to the step block
+  // that actually triggered the request; leave other params (mailbox, etc.).
+  document.body.addEventListener('htmx:configRequest', (e) => {
+    const path = e.detail.path;
+    if (path !== '/templates/preview-fragment' && path !== '/templates/test-send-fragment') return;
+    const block = e.detail.elt.closest('.step-block');
+    if (!block) return;
+    e.detail.parameters.subject = block.querySelector('[name=subject]').value;
+    e.detail.parameters.body = block.querySelector('.tw-body-field').value;
+    e.detail.parameters.attachments = block.querySelector('.tw-attachments-field').value;
+  });
+
   function wireConnector(connector) {
     const apply = () => updateConnectorFromPopover(connector);
     connector.querySelector('.connector-value').addEventListener('input', apply);
