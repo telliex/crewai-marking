@@ -33,7 +33,6 @@ _LIFECYCLE_ACTIONS = {
     "pause": lambda db, task, now: lifecycle.pause_task(db, task),
     "resume": lambda db, task, now: lifecycle.resume_task(db, task),
     "stop": lambda db, task, now: lifecycle.stop_task(db, task),
-    "start": lambda db, task, now: lifecycle.start_task(db, task, now),
 }
 
 # Only pre-start tasks can still have their name/campaign/assignments changed.
@@ -255,6 +254,8 @@ def schedule_task_route(
     task_id: str,
     scheduled_start_at: str = Form(...),
     end_at: str = Form(""),
+    ignore_business_hours: bool = Form(False),
+    ignore_workdays: bool = Form(False),
     db: Session = Depends(get_db),
 ):
     task = _get_task(db, task_id)
@@ -271,7 +272,11 @@ def schedule_task_route(
         )
     except ValueError:
         return RedirectResponse("/tasks?msg=Invalid date/time.", status_code=303)
-    _ok, msg = lifecycle.schedule_task(db, task, when, end_at=end)
+    _ok, msg = lifecycle.schedule_task(
+        db, task, when, end_at=end,
+        ignore_business_hours=ignore_business_hours,
+        ignore_workdays=ignore_workdays,
+    )
     return RedirectResponse(f"/tasks?msg={msg}", status_code=303)
 
 
@@ -287,6 +292,8 @@ def run_task(
     task_id: str,
     send: str = Form(""),
     max_this_run: int = Form(5),
+    ignore_business_hours: bool = Form(False),
+    ignore_workdays: bool = Form(False),
     db: Session = Depends(get_db),
 ):
     task = _get_task(db, task_id)
@@ -295,6 +302,8 @@ def run_task(
     dry = not bool(send)
     s = process_campaign(
         db, task.campaign, task.steps_by_tier, dry_run=dry, max_this_run=max_this_run, gap_ms=0,
+        ignore_business_hours=ignore_business_hours,
+        ignore_workdays=ignore_workdays,
     )
     mode = "DRY-RUN" if dry else "SENT"
     if s.blocked:
@@ -308,12 +317,21 @@ def run_task(
 def lifecycle_action_route(
     task_id: str,
     action: str = Form(...),
+    ignore_business_hours: bool = Form(False),
+    ignore_workdays: bool = Form(False),
     db: Session = Depends(get_db),
 ):
     task = _get_task(db, task_id)
+    now = datetime.now(timezone.utc)
+    if action == "start":
+        _ok, msg = lifecycle.start_task(
+            db, task, now,
+            ignore_business_hours=ignore_business_hours,
+            ignore_workdays=ignore_workdays,
+        )
+        return RedirectResponse(f"/tasks?msg={msg}", status_code=303)
     handler = _LIFECYCLE_ACTIONS.get(action)
     if handler is None:
         raise HTTPException(400, f"Unknown action: {action}")
-    now = datetime.now(timezone.utc)
     _ok, msg = handler(db, task, now)
     return RedirectResponse(f"/tasks?msg={msg}", status_code=303)
