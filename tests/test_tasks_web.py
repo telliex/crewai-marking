@@ -110,6 +110,17 @@ def test_get_tasks_shows_tasks(client, session):
     assert "Widgets Co" in r.text
 
 
+def test_tasks_page_renders_ignore_window_checkboxes(client, session):
+    c = _make_campaign(session, name="Widgets Co")
+    seq = _make_sequence(session, name="Seq A")
+    _make_task(session, c, name="My task", status="draft", sequences={"B": seq.id})
+    r = client.get("/tasks", auth=AUTH)
+    assert r.status_code == 200
+    assert 'name="ignore_business_hours"' in r.text
+    assert 'name="ignore_workdays"' in r.text
+    assert "<dialog" in r.text
+
+
 # --- create ------------------------------------------------------------------
 
 def test_new_task_form_renders(client, session):
