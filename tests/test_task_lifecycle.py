@@ -175,6 +175,17 @@ def test_schedule_task_rejects_empty_steps_sequence(db_session):
     assert not ok and "Tier B" in msg and "no steps" in msg
 
 
+def test_schedule_task_persists_ignore_flags(db_session):
+    c = _campaign(db_session)
+    seq = _seq(db_session)
+    task = _task(db_session, c, sequences={"B": seq.id})
+    ok, _ = lifecycle.schedule_task(db_session, task, NOW,
+                                    ignore_business_hours=True, ignore_workdays=True)
+    assert ok
+    assert task.ignore_business_hours is True
+    assert task.ignore_workdays is True
+
+
 def test_unschedule_task_happy_path(db_session):
     c = _campaign(db_session)
     task = _task(db_session, c, status="scheduled", scheduled_start_at=NOW, end_at=NOW + timedelta(days=1))
@@ -299,6 +310,29 @@ def test_start_task_rejects_wrong_status(db_session):
     ok, msg = lifecycle.start_task(db_session, task, NOW)
     assert not ok
     assert msg == "Task can't be started from its current status."
+
+
+def test_start_task_none_preserves_scheduled_flags(db_session):
+    c = _campaign(db_session)
+    seq = _seq(db_session)
+    task = _task(db_session, c, sequences={"B": seq.id})
+    lifecycle.schedule_task(db_session, task, NOW, ignore_business_hours=True)
+    # Scheduler auto-start passes no flags -> must not reset the scheduled choice.
+    ok, _ = lifecycle.start_task(db_session, task, NOW)
+    assert ok
+    assert task.ignore_business_hours is True
+    assert task.ignore_workdays is False
+
+
+def test_start_task_explicit_flags_override(db_session):
+    c = _campaign(db_session)
+    seq = _seq(db_session)
+    task = _task(db_session, c, sequences={"B": seq.id})
+    ok, _ = lifecycle.start_task(db_session, task, NOW,
+                                 ignore_business_hours=True, ignore_workdays=True)
+    assert ok
+    assert task.ignore_business_hours is True
+    assert task.ignore_workdays is True
 
 
 # --- pause_task / resume_task / stop_task ------------------------------------
