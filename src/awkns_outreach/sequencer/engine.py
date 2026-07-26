@@ -26,7 +26,7 @@ from awkns_outreach.compliance import can_send_legally, is_suppressed, suppress
 from awkns_outreach.db.models import Campaign, Event, Lead
 from awkns_outreach.identity import resolve_identity
 from awkns_outreach.send.mailer import send_outreach_email
-from awkns_outreach.sequencer.limits import SEND, in_business_hours, warmup_cap
+from awkns_outreach.sequencer.limits import SEND, in_send_window, warmup_cap
 
 # Stop retrying a lead after this many send errors at the same step.
 MAX_SEND_ERRORS = 3
@@ -72,7 +72,8 @@ def process_campaign(
     dry_run: bool = True,
     max_this_run: int = 5,
     gap_ms: Optional[int] = None,
-    ignore_hours: bool = False,
+    ignore_business_hours: bool = False,
+    ignore_workdays: bool = False,
     now: Optional[datetime] = None,
 ) -> RunSummary:
     now = now or _utcnow()
@@ -175,8 +176,10 @@ def process_campaign(
             summary.details.append({"email": email, "result": "suppressed"})
             continue
 
-        # Recipient's local business hours?
-        if not ignore_hours and not in_business_hours(now, lead.country):
+        # Recipient's local send window (business hours + workdays)?
+        if not in_send_window(now, lead.country,
+                              ignore_hours=ignore_business_hours,
+                              ignore_days=ignore_workdays):
             summary.skipped += 1
             summary.details.append({"email": email, "result": "skipped:hours"})
             continue

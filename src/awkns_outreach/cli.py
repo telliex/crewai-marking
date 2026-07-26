@@ -86,7 +86,10 @@ def run(
     campaign_id: str,
     send: bool = typer.Option(False, help="Send for real (default is a dry run)."),
     max_this_run: int = typer.Option(5, "--max", help="Cap sends this invocation."),
-    ignore_hours: bool = typer.Option(False, help="Bypass the business-hours gate (testing/manual)."),
+    ignore_business_hours: bool = typer.Option(
+        False, help="Bypass the 09:00-17:00 time-of-day gate (testing/manual)."),
+    ignore_workdays: bool = typer.Option(
+        False, help="Bypass the Mon-Fri gate (testing/manual)."),
 ) -> None:
     """Advance one campaign's running Task. DRY-RUN unless --send."""
     from sqlalchemy import select
@@ -100,7 +103,9 @@ def run(
             typer.secho(f"No running task for campaign {c.name}.", fg="red")
             raise typer.Exit(1)
         summary = process_campaign(s, c, task.steps_by_tier, dry_run=not send,
-                                   max_this_run=max_this_run, ignore_hours=ignore_hours)
+                                   max_this_run=max_this_run,
+                                   ignore_business_hours=ignore_business_hours,
+                                   ignore_workdays=ignore_workdays)
     if summary.blocked:
         typer.secho(f"BLOCKED: {summary.blocked}", fg="red")
         raise typer.Exit(1)

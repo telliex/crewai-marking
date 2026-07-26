@@ -7,6 +7,7 @@ no web client."""
 from datetime import datetime, timedelta, timezone
 
 from awkns_outreach.db.models import Campaign, MailSequence, Task
+from awkns_outreach.runner import run_all_campaigns
 from awkns_outreach.send.mailer import SendResult
 from awkns_outreach.sequencer import engine, lifecycle
 
@@ -174,6 +175,17 @@ def test_schedule_task_rejects_empty_steps_sequence(db_session):
     assert not ok and "Tier B" in msg and "no steps" in msg
 
 
+def test_schedule_task_persists_ignore_flags(db_session):
+    c = _campaign(db_session)
+    seq = _seq(db_session)
+    task = _task(db_session, c, sequences={"B": seq.id})
+    ok, _ = lifecycle.schedule_task(db_session, task, NOW,
+                                    ignore_business_hours=True, ignore_workdays=True)
+    assert ok
+    assert task.ignore_business_hours is True
+    assert task.ignore_workdays is True
+
+
 def test_unschedule_task_happy_path(db_session):
     c = _campaign(db_session)
     task = _task(db_session, c, status="scheduled", scheduled_start_at=NOW, end_at=NOW + timedelta(days=1))
@@ -300,6 +312,29 @@ def test_start_task_rejects_wrong_status(db_session):
     assert msg == "Task can't be started from its current status."
 
 
+def test_start_task_none_preserves_scheduled_flags(db_session):
+    c = _campaign(db_session)
+    seq = _seq(db_session)
+    task = _task(db_session, c, sequences={"B": seq.id})
+    lifecycle.schedule_task(db_session, task, NOW, ignore_business_hours=True)
+    # Scheduler auto-start passes no flags -> must not reset the scheduled choice.
+    ok, _ = lifecycle.start_task(db_session, task, NOW)
+    assert ok
+    assert task.ignore_business_hours is True
+    assert task.ignore_workdays is False
+
+
+def test_start_task_explicit_flags_override(db_session):
+    c = _campaign(db_session)
+    seq = _seq(db_session)
+    task = _task(db_session, c, sequences={"B": seq.id})
+    ok, _ = lifecycle.start_task(db_session, task, NOW,
+                                 ignore_business_hours=True, ignore_workdays=True)
+    assert ok
+    assert task.ignore_business_hours is True
+    assert task.ignore_workdays is True
+
+
 # --- pause_task / resume_task / stop_task ------------------------------------
 
 def test_pause_task_happy_path(db_session):
@@ -383,7 +418,8 @@ def test_stop_then_dashboard_resume_does_not_resend(db_session, monkeypatch):
     db_session.commit()
 
     summary = engine.process_campaign(
-        db_session, c, task.steps_by_tier, dry_run=False, now=NOW, ignore_hours=True, gap_ms=0,
+        db_session, c, task.steps_by_tier, dry_run=False, now=NOW,
+        ignore_business_hours=True, ignore_workdays=True, gap_ms=0,
     )
     assert summary.blocked == "no steps"
     assert summary.sent == 0
@@ -494,7 +530,7 @@ def test_end_to_end_start_send_complete_and_reuse_campaign(db_session, monkeypat
     assert ok and task1.steps_by_tier == {"B": STEPS} and c.status == "active"
 
     s = engine.process_campaign(db_session, c, task1.steps_by_tier, dry_run=False, now=NOW,
-                                ignore_hours=True, gap_ms=0)
+                                ignore_business_hours=True, ignore_workdays=True, gap_ms=0)
     assert s.sent == 1
     db_session.refresh(lead)
     assert lead.step == 1 and lead.status == "completed"  # single-step sequence
@@ -513,8 +549,37 @@ def test_end_to_end_start_send_complete_and_reuse_campaign(db_session, monkeypat
 
     s2 = engine.process_campaign(
         db_session, c, task2.steps_by_tier, dry_run=False, now=NOW + timedelta(days=1),
-        ignore_hours=True, gap_ms=0,
+        ignore_business_hours=True, ignore_workdays=True, gap_ms=0,
     )
     assert s2.sent == 1
     db_session.refresh(lead)
     assert lead.step == 1 and lead.status == "completed"
+
+
+def test_task_send_window_flags_default_false(db_session):
+    c = _campaign(db_session)
+    task = _task(db_session, c)
+    assert task.ignore_business_hours is False
+    assert task.ignore_workdays is False
+
+
+def test_runner_forwards_ignore_flags(db_session, monkeypatch):
+    monkeypatch.setattr(
+        engine, "send_outreach_email",
+        lambda l, c, e, s, steps, dry_run: SendResult(ok=True, id="m1", subject="s"),
+    )
+    sat_night = datetime(2026, 7, 25, 14, 0, tzinfo=UTC)  # Sat 22:00 Taipei
+    c = _campaign(db_session)
+    seq = _seq(db_session)
+    task = _task(db_session, c, sequences={"B": seq.id},
+                 ignore_business_hours=True, ignore_workdays=True)
+    lifecycle.start_task(db_session, task, sat_night)
+    from awkns_outreach.db.models import Lead
+    db_session.add(Lead(campaign_id=c.id, email="w@x.com", company="X",
+                        status="active", step=0, tier="B", country="TW"))
+    db_session.commit()
+
+    results = run_all_campaigns(db_session, dry_run=False, max_this_run=5,
+                                gap_ms=0, now=sat_night)
+    total_sent = sum(s.sent for _c, s in results)
+    assert total_sent == 1

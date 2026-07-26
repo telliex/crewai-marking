@@ -63,7 +63,8 @@ def _validate_assignments(db: Session, task: Task) -> Optional[str]:
 
 
 def schedule_task(
-    db: Session, task: Task, when: datetime, end_at: Optional[datetime] = None
+    db: Session, task: Task, when: datetime, end_at: Optional[datetime] = None,
+    *, ignore_business_hours: bool = False, ignore_workdays: bool = False,
 ) -> tuple[bool, str]:
     if task.status != "draft":
         return False, "Task isn't a draft."
@@ -77,6 +78,8 @@ def schedule_task(
         return False, "End time must be after the start time."
     task.scheduled_start_at = when
     task.end_at = end_at
+    task.ignore_business_hours = ignore_business_hours
+    task.ignore_workdays = ignore_workdays
     task.status = "scheduled"
     db.commit()
     return True, "Task scheduled."
@@ -92,7 +95,11 @@ def unschedule_task(db: Session, task: Task) -> tuple[bool, str]:
     return True, "Task unscheduled."
 
 
-def start_task(db: Session, task: Task, now: datetime) -> tuple[bool, str]:
+def start_task(
+    db: Session, task: Task, now: datetime,
+    *, ignore_business_hours: Optional[bool] = None,
+    ignore_workdays: Optional[bool] = None,
+) -> tuple[bool, str]:
     if task.status not in ("draft", "scheduled"):
         return False, "Task can't be started from its current status."
     conflict = active_conflict(db, task.campaign_id, exclude_id=task.id)
@@ -135,6 +142,11 @@ def start_task(db: Session, task: Task, now: datetime) -> tuple[bool, str]:
         )
         .values(status="paused")
     )
+
+    if ignore_business_hours is not None:
+        task.ignore_business_hours = ignore_business_hours
+    if ignore_workdays is not None:
+        task.ignore_workdays = ignore_workdays
 
     campaign.status = "active"
     task.status = "running"

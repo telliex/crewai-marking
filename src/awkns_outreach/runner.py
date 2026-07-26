@@ -28,6 +28,8 @@ def run_all_campaigns(
         summary = process_campaign(
             session, task.campaign, task.steps_by_tier, dry_run=dry_run,
             max_this_run=max_this_run, gap_ms=gap_ms, now=now,
+            ignore_business_hours=task.ignore_business_hours,
+            ignore_workdays=task.ignore_workdays,
         )
         results.append((task.campaign, summary))
     return results

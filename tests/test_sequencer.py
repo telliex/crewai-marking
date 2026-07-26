@@ -10,7 +10,7 @@ from awkns_outreach.send.mailer import SendResult
 from awkns_outreach.sequencer import engine
 from awkns_outreach.sequencer.limits import (
     SEND,
-    in_business_hours,
+    in_send_window,
     tz_for,
     warmup_cap,
 )
@@ -57,18 +57,27 @@ def test_warmup_cap_by_day():
     assert warmup_cap(start, start - timedelta(days=1)) == 0     # future start
 
 
-def test_tz_for_and_business_hours():
+def test_tz_for():
     assert tz_for("JP") == "Asia/Tokyo"
     assert tz_for(None) == "Asia/Taipei"
-    # 2026-07-04 is a Saturday → outside Mon–Fri everywhere.
-    sat = datetime(2026, 7, 4, 3, 0, tzinfo=UTC)  # 11:00 Sat in Taipei
-    assert not in_business_hours(sat, "TW")
-    # 2026-07-06 is a Monday; 02:00 UTC = 10:00 Taipei → inside window.
-    mon = datetime(2026, 7, 6, 2, 0, tzinfo=UTC)
-    assert in_business_hours(mon, "TW")
-    # Same instant is 03:00 in Tokyo (UTC+9)? 11:00 → still, use night check:
-    night = datetime(2026, 7, 5, 20, 0, tzinfo=UTC)  # 04:00 Mon Taipei
-    assert not in_business_hours(night, "TW")
+
+
+def test_in_send_window_dimensions():
+    sat = datetime(2026, 7, 25, 3, 0, tzinfo=UTC)   # Sat, 11:00 Taipei
+    mon = datetime(2026, 7, 27, 3, 0, tzinfo=UTC)   # Mon, 11:00 Taipei
+    night = datetime(2026, 7, 27, 14, 0, tzinfo=UTC)  # Mon, 22:00 Taipei
+    # Default gate: both must hold.
+    assert not in_send_window(sat, "TW")            # weekend blocks
+    assert in_send_window(mon, "TW")                # weekday + in-hours
+    assert not in_send_window(night, "TW")          # off-hours blocks
+    # ignore_days lets the weekend through, still honoring hours.
+    assert in_send_window(sat, "TW", ignore_days=True)
+    assert not in_send_window(night, "TW", ignore_days=True)  # still off-hours
+    # ignore_hours lets the night through, still honoring the day.
+    assert in_send_window(night, "TW", ignore_hours=True)
+    assert not in_send_window(sat, "TW", ignore_hours=True)   # still weekend
+    # Both ignored: always true.
+    assert in_send_window(sat, "TW", ignore_hours=True, ignore_days=True)
 
 
 # --- engine fixtures -------------------------------------------------------
@@ -109,7 +118,7 @@ NOW = datetime(2026, 7, 6, 2, 0, tzinfo=UTC)  # Monday, business hours in Taipei
 def test_dry_run_sends_nothing_and_does_not_advance(db_session):
     c = _campaign(db_session)
     lead = _lead(db_session, c)
-    s = engine.process_campaign(db_session, c, _STEPS_BY_TIER, dry_run=True, now=NOW, ignore_hours=True)
+    s = engine.process_campaign(db_session, c, _STEPS_BY_TIER, dry_run=True, now=NOW, ignore_business_hours=True, ignore_workdays=True)
     assert s.sent == 1 and s.dry_run
     db_session.refresh(lead)
     assert lead.step == 0 and lead.status == "active"  # unchanged
@@ -120,7 +129,7 @@ def test_real_send_advances_step_and_logs(db_session, monkeypatch):
     _mock_ok(monkeypatch)
     c = _campaign(db_session)
     lead = _lead(db_session, c)
-    s = engine.process_campaign(db_session, c, _STEPS_BY_TIER, dry_run=False, now=NOW, ignore_hours=True, gap_ms=0)
+    s = engine.process_campaign(db_session, c, _STEPS_BY_TIER, dry_run=False, now=NOW, ignore_business_hours=True, ignore_workdays=True, gap_ms=0)
     assert s.sent == 1
     db_session.refresh(lead)
     assert lead.step == 1 and lead.status == "active"
@@ -136,7 +145,7 @@ def test_real_send_advances_step_using_delay_minutes(db_session, monkeypatch):
     _mock_ok(monkeypatch)
     c = _campaign(db_session)
     lead = _lead(db_session, c)
-    s = engine.process_campaign(db_session, c, _STEPS_BY_TIER_MINUTES, dry_run=False, now=NOW, ignore_hours=True, gap_ms=0)
+    s = engine.process_campaign(db_session, c, _STEPS_BY_TIER_MINUTES, dry_run=False, now=NOW, ignore_business_hours=True, ignore_workdays=True, gap_ms=0)
     assert s.sent == 1
     db_session.refresh(lead)
     assert lead.step == 1 and lead.status == "active"
@@ -148,7 +157,7 @@ def test_final_step_completes(db_session, monkeypatch):
     _mock_ok(monkeypatch)
     c = _campaign(db_session)
     lead = _lead(db_session, c, step=1)  # last step
-    engine.process_campaign(db_session, c, _STEPS_BY_TIER, dry_run=False, now=NOW, ignore_hours=True, gap_ms=0)
+    engine.process_campaign(db_session, c, _STEPS_BY_TIER, dry_run=False, now=NOW, ignore_business_hours=True, ignore_workdays=True, gap_ms=0)
     db_session.refresh(lead)
     assert lead.step == 2 and lead.status == "completed" and lead.next_action_at is None
 
@@ -164,7 +173,7 @@ def test_suppressed_lead_flipped(db_session, monkeypatch):
     # would have flipped it already — that path is covered in test_compliance).
     db_session.add(Suppression(email="k@toyota.co.jp", reason="unsubscribe"))
     db_session.commit()
-    s = engine.process_campaign(db_session, c, _STEPS_BY_TIER, dry_run=False, now=NOW, ignore_hours=True, gap_ms=0)
+    s = engine.process_campaign(db_session, c, _STEPS_BY_TIER, dry_run=False, now=NOW, ignore_business_hours=True, ignore_workdays=True, gap_ms=0)
     assert s.suppressed == 1 and s.sent == 0
     db_session.refresh(lead)
     assert lead.status == "suppressed"
@@ -179,6 +188,22 @@ def test_business_hours_skip(db_session, monkeypatch):
     assert s.sent == 0 and s.skipped == 1
 
 
+def test_engine_ignore_flags_bypass_window(db_session, monkeypatch):
+    _mock_ok(monkeypatch)
+    sat_night = datetime(2026, 7, 25, 14, 0, tzinfo=UTC)  # Sat 22:00 Taipei
+    c = _campaign(db_session)
+    _lead(db_session, c, country="TW")
+    # Default gate: weekend + night -> skipped, nothing sent.
+    blocked = engine.process_campaign(db_session, c, _STEPS_BY_TIER,
+                                      dry_run=False, now=sat_night, gap_ms=0)
+    assert blocked.sent == 0 and blocked.skipped == 1
+    # Both flags on -> the same lead sends.
+    ok = engine.process_campaign(db_session, c, _STEPS_BY_TIER, dry_run=False,
+                                 now=sat_night, gap_ms=0,
+                                 ignore_business_hours=True, ignore_workdays=True)
+    assert ok.sent == 1
+
+
 def test_legal_gate_blocks_real_send(db_session, monkeypatch):
     # Hermetic: force the global fallback empty so the gate depends only on the
     # (empty) campaign identity, not on the developer's .env.
@@ -186,7 +211,7 @@ def test_legal_gate_blocks_real_send(db_session, monkeypatch):
     monkeypatch.setattr(settings, "outreach_postal_address", "")
     c = _campaign(db_session, postal_address="")  # no address
     _lead(db_session, c)
-    s = engine.process_campaign(db_session, c, _STEPS_BY_TIER, dry_run=False, now=NOW, ignore_hours=True)
+    s = engine.process_campaign(db_session, c, _STEPS_BY_TIER, dry_run=False, now=NOW, ignore_business_hours=True, ignore_workdays=True)
     assert s.sent == 0 and s.blocked and "postal address" in s.blocked
 
 
@@ -196,7 +221,7 @@ def test_retry_cap_parks_lead_as_failed(db_session, monkeypatch):
     c = _campaign(db_session)
     lead = _lead(db_session, c)
     for _ in range(engine.MAX_SEND_ERRORS):
-        engine.process_campaign(db_session, c, _STEPS_BY_TIER, dry_run=False, now=NOW, ignore_hours=True, gap_ms=0)
+        engine.process_campaign(db_session, c, _STEPS_BY_TIER, dry_run=False, now=NOW, ignore_business_hours=True, ignore_workdays=True, gap_ms=0)
     db_session.refresh(lead)
     assert lead.status == "failed"
     assert db_session.query(Event).filter_by(type="error").count() == engine.MAX_SEND_ERRORS
@@ -208,7 +233,7 @@ def test_rolling_24h_cap_enforced(db_session, monkeypatch):
     # 3 due leads, but only allow 2 this run.
     for i in range(3):
         _lead(db_session, c, email=f"a{i}@x.com")
-    s = engine.process_campaign(db_session, c, _STEPS_BY_TIER, dry_run=False, now=NOW, ignore_hours=True,
+    s = engine.process_campaign(db_session, c, _STEPS_BY_TIER, dry_run=False, now=NOW, ignore_business_hours=True, ignore_workdays=True,
                                 gap_ms=0, max_this_run=2)
     assert s.sent == 2  # budget capped this run
 
@@ -222,7 +247,7 @@ def test_process_campaign_blocked_when_paused_or_archived(db_session, monkeypatc
     lead = _lead(db_session, c)
     db_session.commit()
 
-    s = engine.process_campaign(db_session, c, _STEPS_BY_TIER, dry_run=False, now=NOW, ignore_hours=True, gap_ms=0)
+    s = engine.process_campaign(db_session, c, _STEPS_BY_TIER, dry_run=False, now=NOW, ignore_business_hours=True, ignore_workdays=True, gap_ms=0)
     assert s.blocked == "campaign is paused"
     assert s.sent == 0
     db_session.refresh(lead)
@@ -230,11 +255,11 @@ def test_process_campaign_blocked_when_paused_or_archived(db_session, monkeypatc
 
     c.status = "archived"
     db_session.commit()
-    s2 = engine.process_campaign(db_session, c, _STEPS_BY_TIER, dry_run=False, now=NOW, ignore_hours=True, gap_ms=0)
+    s2 = engine.process_campaign(db_session, c, _STEPS_BY_TIER, dry_run=False, now=NOW, ignore_business_hours=True, ignore_workdays=True, gap_ms=0)
     assert s2.blocked == "campaign is archived"
     assert s2.sent == 0
 
-    s3 = engine.process_campaign(db_session, c, _STEPS_BY_TIER, dry_run=True, now=NOW, ignore_hours=True)
+    s3 = engine.process_campaign(db_session, c, _STEPS_BY_TIER, dry_run=True, now=NOW, ignore_business_hours=True, ignore_workdays=True)
     assert s3.blocked is None
     assert s3.sent == 1
 
@@ -249,19 +274,19 @@ def test_empty_steps_by_tier_blocked_and_does_not_complete_leads(db_session):
     c = _campaign(db_session)
     lead = _lead(db_session, c)
 
-    s = engine.process_campaign(db_session, c, {}, dry_run=True, now=NOW, ignore_hours=True)
+    s = engine.process_campaign(db_session, c, {}, dry_run=True, now=NOW, ignore_business_hours=True, ignore_workdays=True)
     assert s.blocked == "no steps"
     db_session.refresh(lead)
     assert lead.status == "active"
 
-    s2 = engine.process_campaign(db_session, c, {}, dry_run=False, now=NOW, ignore_hours=True, gap_ms=0)
+    s2 = engine.process_campaign(db_session, c, {}, dry_run=False, now=NOW, ignore_business_hours=True, ignore_workdays=True, gap_ms=0)
     assert s2.blocked == "no steps"
     db_session.refresh(lead)
     assert lead.status == "active"
 
     # A steps_by_tier dict with only empty-list values (e.g. {"B": []}) is
     # equally "no steps" — any() over the values must be falsy.
-    s3 = engine.process_campaign(db_session, c, {"B": []}, dry_run=True, now=NOW, ignore_hours=True)
+    s3 = engine.process_campaign(db_session, c, {"B": []}, dry_run=True, now=NOW, ignore_business_hours=True, ignore_workdays=True)
     assert s3.blocked == "no steps"
 
 
@@ -275,7 +300,7 @@ def test_tier_ordering_a_before_null_before_c(db_session, monkeypatch):
     lead_null = _lead(db_session, c, email="null@x.com", tier=None)
     lead_a = _lead(db_session, c, email="a@x.com", tier="A")
 
-    s = engine.process_campaign(db_session, c, steps_by_tier, dry_run=False, now=NOW, ignore_hours=True,
+    s = engine.process_campaign(db_session, c, steps_by_tier, dry_run=False, now=NOW, ignore_business_hours=True, ignore_workdays=True,
                                 gap_ms=0, max_this_run=1)
     assert s.sent == 1
     db_session.refresh(lead_a)
@@ -285,7 +310,7 @@ def test_tier_ordering_a_before_null_before_c(db_session, monkeypatch):
     assert lead_null.step == 0       # NULL (as "B") not reached this run
     assert lead_c.step == 0          # "C" not reached this run
 
-    s2 = engine.process_campaign(db_session, c, steps_by_tier, dry_run=False, now=NOW, ignore_hours=True,
+    s2 = engine.process_campaign(db_session, c, steps_by_tier, dry_run=False, now=NOW, ignore_business_hours=True, ignore_workdays=True,
                                  gap_ms=0, max_this_run=1)
     assert s2.sent == 1
     db_session.refresh(lead_null)
@@ -311,7 +336,7 @@ def test_tier_routing_uses_that_tiers_own_steps(db_session, monkeypatch):
     _lead(db_session, c, email="a@x.com", tier="A")
 
     s = engine.process_campaign(db_session, c, steps_by_tier, dry_run=False, now=NOW,
-                                ignore_hours=True, gap_ms=0)
+                                ignore_business_hours=True, ignore_workdays=True, gap_ms=0)
     assert s.sent == 1
     assert sent_subjects == ["A-subject"]
 
@@ -325,7 +350,7 @@ def test_unassigned_tier_lead_parked_paused_and_counted_skipped(db_session, monk
     lead_b = _lead(db_session, c, email="b@x.com", tier="B")
 
     s = engine.process_campaign(db_session, c, steps_by_tier, dry_run=False, now=NOW,
-                                ignore_hours=True, gap_ms=0)
+                                ignore_business_hours=True, ignore_workdays=True, gap_ms=0)
     assert s.sent == 0
     assert s.skipped == 1
     assert s.details[-1]["result"] == "skipped:no-tier-sequence"
@@ -343,7 +368,7 @@ def test_rolling_24h_cap_shared_across_tiers(db_session, monkeypatch):
     _lead(db_session, c, email="c@x.com", tier="C")
 
     s = engine.process_campaign(db_session, c, steps_by_tier, dry_run=False, now=NOW,
-                                ignore_hours=True, gap_ms=0, max_this_run=1)
+                                ignore_business_hours=True, ignore_workdays=True, gap_ms=0, max_this_run=1)
     assert s.sent == 1  # one shared budget of 1, not 1 per tier
 
 

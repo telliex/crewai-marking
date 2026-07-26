@@ -110,6 +110,17 @@ def test_get_tasks_shows_tasks(client, session):
     assert "Widgets Co" in r.text
 
 
+def test_tasks_page_renders_ignore_window_checkboxes(client, session):
+    c = _make_campaign(session, name="Widgets Co")
+    seq = _make_sequence(session, name="Seq A")
+    _make_task(session, c, name="My task", status="draft", sequences={"B": seq.id})
+    r = client.get("/tasks", auth=AUTH)
+    assert r.status_code == 200
+    assert 'name="ignore_business_hours"' in r.text
+    assert 'name="ignore_workdays"' in r.text
+    assert "<dialog" in r.text
+
+
 # --- create ------------------------------------------------------------------
 
 def test_new_task_form_renders(client, session):
@@ -500,7 +511,10 @@ def test_run_task_runs_when_status_running(client, session, monkeypatch):
 
     monkeypatch.setattr(tasks, "process_campaign", fake_process_campaign)
 
-    r = client.post(f"/tasks/{task.id}/run", auth=AUTH, data={}, follow_redirects=False)
+    r = client.post(
+        f"/tasks/{task.id}/run", auth=AUTH, follow_redirects=False,
+        data={"ignore_business_hours": "1", "ignore_workdays": "1"},
+    )
     assert r.status_code == 303
     from urllib.parse import unquote
     location = unquote(r.headers["location"])
@@ -512,6 +526,8 @@ def test_run_task_runs_when_status_running(client, session, monkeypatch):
     assert called_campaign_id == c.id
     assert called_steps == steps_by_tier
     assert called_kwargs["dry_run"] is True
+    assert called_kwargs["ignore_business_hours"] is True
+    assert called_kwargs["ignore_workdays"] is True
 
 
 def test_lifecycle_unknown_action_returns_400(client, session):
@@ -519,3 +535,67 @@ def test_lifecycle_unknown_action_returns_400(client, session):
     task = _make_task(session, c, status="draft")
     r = client.post(f"/tasks/{task.id}/lifecycle", auth=AUTH, data={"action": "bogus"})
     assert r.status_code == 400
+
+
+# --- send-window override checkboxes --------------------------------------------
+
+def test_schedule_sets_ignore_flags(client, session):
+    c = _make_campaign(session)
+    seq = _make_sequence(session)
+    task = _make_task(session, c, status="draft", sequences={"B": seq.id})
+    r = client.post(
+        f"/tasks/{task.id}/schedule", auth=AUTH, follow_redirects=False,
+        data={
+            "scheduled_start_at": "2026-08-01T09:00",
+            "end_at": "",
+            "ignore_business_hours": "1",
+            "ignore_workdays": "1",
+        },
+    )
+    assert r.status_code == 303
+    session.refresh(task)
+    assert task.ignore_business_hours is True
+    assert task.ignore_workdays is True
+
+
+def test_start_now_sets_ignore_flags(client, session):
+    c = _make_campaign(session)
+    seq = _make_sequence(session, status="active", steps=list(STEPS))
+    task = _make_task(session, c, status="draft", sequences={"B": seq.id})
+    _make_lead(session, c, tier="B")
+    r = client.post(
+        f"/tasks/{task.id}/lifecycle", auth=AUTH, follow_redirects=False,
+        data={"action": "start", "ignore_business_hours": "1"},
+    )
+    assert r.status_code == 303
+    session.refresh(task)
+    assert task.status == "running"
+    assert task.ignore_business_hours is True
+    assert task.ignore_workdays is False
+
+
+def test_run_does_not_persist_ignore_flags(client, session, monkeypatch):
+    c = _make_campaign(session)
+    steps_by_tier = {"A": [{"subject": "Hi {{first_name}}", "body": "Hello"}]}
+    task = _make_task(session, c, status="running", steps_by_tier=steps_by_tier)
+    _make_lead(session, c, tier="A")
+
+    canned = RunSummary(
+        dry_run=False, considered=1, sent=1, skipped=0, suppressed=0, errors=0,
+        cap=5, sent_last_24h=0, daily_remaining=4,
+    )
+    monkeypatch.setattr(tasks, "process_campaign", lambda *a, **kw: canned)
+
+    r = client.post(
+        f"/tasks/{task.id}/run", auth=AUTH, follow_redirects=False,
+        data={
+            "max_this_run": "5",
+            "send": "1",
+            "ignore_business_hours": "1",
+            "ignore_workdays": "1",
+        },
+    )
+    assert r.status_code == 303
+    session.refresh(task)
+    assert task.ignore_business_hours is False  # transient — not written
+    assert task.ignore_workdays is False

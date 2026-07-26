@@ -15,12 +15,14 @@ from typing import Any, Optional
 
 from sqlalchemy import (
     JSON,
+    Boolean,
     DateTime,
     ForeignKey,
     Index,
     Integer,
     String,
     UniqueConstraint,
+    false as sa_false,
     func,
 )
 from sqlalchemy.dialects.postgresql import ARRAY, JSONB
@@ -333,6 +335,15 @@ class Task(Base):
     # the task automatically (stop_expired_tasks). NULL = runs indefinitely.
     end_at: Mapped[Optional[datetime]] = mapped_column(
         DateTime(timezone=True), nullable=True
+    )
+    # Send-window overrides (set via Schedule / Start now, read every tick by
+    # runner.run_all_campaigns). Relax *timing* only — the daily cap still
+    # applies. Independent: a task may ignore workdays but still honor 09:00–17:00.
+    ignore_business_hours: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, server_default=sa_false()
+    )
+    ignore_workdays: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, server_default=sa_false()
     )
     started_at: Mapped[Optional[datetime]] = mapped_column(
         DateTime(timezone=True), nullable=True
