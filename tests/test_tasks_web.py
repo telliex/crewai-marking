@@ -511,7 +511,10 @@ def test_run_task_runs_when_status_running(client, session, monkeypatch):
 
     monkeypatch.setattr(tasks, "process_campaign", fake_process_campaign)
 
-    r = client.post(f"/tasks/{task.id}/run", auth=AUTH, data={}, follow_redirects=False)
+    r = client.post(
+        f"/tasks/{task.id}/run", auth=AUTH, follow_redirects=False,
+        data={"ignore_business_hours": "1", "ignore_workdays": "1"},
+    )
     assert r.status_code == 303
     from urllib.parse import unquote
     location = unquote(r.headers["location"])
@@ -523,6 +526,8 @@ def test_run_task_runs_when_status_running(client, session, monkeypatch):
     assert called_campaign_id == c.id
     assert called_steps == steps_by_tier
     assert called_kwargs["dry_run"] is True
+    assert called_kwargs["ignore_business_hours"] is True
+    assert called_kwargs["ignore_workdays"] is True
 
 
 def test_lifecycle_unknown_action_returns_400(client, session):
