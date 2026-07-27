@@ -132,6 +132,11 @@
                 </div>
               </form>
             </dialog>
+            <form method="post" action="/tasks/{{ t.id }}/edit" class="inline"
+                  onsubmit="return confirm('Delete this draft task? This can\'t be undone.');">
+              <input type="hidden" name="action" value="delete">
+              <button type="submit" class="text-red-700 hover:underline">Delete</button>
+            </form>
             {% elif t.status == 'scheduled' %}
             <form method="post" action="/tasks/{{ t.id }}/unschedule" class="inline">
               <button type="submit" class="text-slate-700 hover:underline">Unschedule</button>

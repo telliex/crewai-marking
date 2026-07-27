@@ -121,6 +121,16 @@ def test_tasks_page_renders_ignore_window_checkboxes(client, session):
     assert "<dialog" in r.text
 
 
+def test_draft_task_row_has_delete_button(client, session):
+    c = _make_campaign(session, name="Widgets Co")
+    task = _make_task(session, c, name="Deletable draft", status="draft")
+    r = client.get("/tasks", auth=AUTH)
+    assert r.status_code == 200
+    assert f'action="/tasks/{task.id}/edit"' in r.text
+    assert 'value="delete"' in r.text
+    assert ">Delete</button>" in r.text
+
+
 # --- create ------------------------------------------------------------------
 
 def test_new_task_form_renders(client, session):
