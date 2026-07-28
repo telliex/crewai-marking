@@ -65,6 +65,14 @@ def unsubscribe_url(email: str) -> str:
 
 # --- Headers + footer ------------------------------------------------------
 
+# Hardcoded Pounds Network brand block shown at the top of every footer.
+# Deliberately NOT driven by the sender identity (env OUTREACH_* / campaign
+# override): the outbound brand is always Pounds Network regardless of who the
+# individual sender is. Edit these three lines to change the branding.
+_BRAND_NAME = "Pounds Network"
+_BRAND_TAGLINE = "AI-Powered Marketing Campaigns"
+_BRAND_CONTACT = "Pounds.Network | gm@wing.studio | (425)628-4276 | Seattle, WA"
+
 def list_unsubscribe_headers(email: str, identity: Optional[Identity] = None) -> dict[str, str]:
     ident = identity or resolve_identity()
     url = unsubscribe_url(email)
@@ -78,21 +86,22 @@ def list_unsubscribe_headers(email: str, identity: Optional[Identity] = None) ->
 
 
 def footer_text(email: str, identity: Optional[Identity] = None) -> str:
-    ident = identity or resolve_identity()
-    lines = ["", "—", f"{ident.sender_name} · {ident.company}"]
-    if ident.postal_address:
-        lines.append(ident.postal_address)
+    # `identity` is accepted for a stable API but no longer used: the brand
+    # block is hardcoded and the postal address is intentionally not shown.
+    lines = ["", "—", _BRAND_NAME, _BRAND_TAGLINE, _BRAND_CONTACT]
     lines.append(f"Not relevant? Unsubscribe and I won't email again: {unsubscribe_url(email)}")
     return "\n".join(lines)
 
 
 def footer_html(email: str, identity: Optional[Identity] = None) -> str:
-    ident = identity or resolve_identity()
-    addr = f"{escape(ident.postal_address)} · " if ident.postal_address else ""
+    # `identity` is accepted for a stable API but no longer used: the brand
+    # block is hardcoded and the postal address is intentionally not shown.
     return (
         '<br><br><div style="font-size:13px;line-height:1.6">'
-        f'<div style="font-weight:600;color:#202124">{escape(ident.sender_name)} · {escape(ident.company)}</div>'
-        f'<div style="color:#9aa0a6;font-size:12px">{addr}'
+        f'<div style="font-weight:600;color:#202124">{escape(_BRAND_NAME)}</div>'
+        f'<div style="color:#9aa0a6;font-size:12px">{escape(_BRAND_TAGLINE)}</div>'
+        f'<div style="color:#9aa0a6;font-size:12px">{escape(_BRAND_CONTACT)}</div>'
+        f'<div style="color:#9aa0a6;font-size:12px">'
         f'<a href="{unsubscribe_url(email)}" style="color:#9aa0a6">Unsubscribe</a> '
         "and I won't email again.</div></div>"
     )

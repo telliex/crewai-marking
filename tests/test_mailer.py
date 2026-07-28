@@ -37,7 +37,10 @@ def test_render_fills_placeholders():
     assert r.subject == "quick idea for Toyota"
     assert "Hi Kenji," in r.text
     assert "Your stories would animate beautifully." in r.text
-    assert "Unsubscribe" in r.text and "1 Test St" in r.text
+    # Hardcoded Pounds Network footer, no postal address, unsubscribe kept.
+    assert "Pounds Network" in r.text
+    assert "Unsubscribe" in r.text
+    assert "1 Test St" not in r.text
     assert "<p" in r.html  # inbox-friendly paragraphs
 
 

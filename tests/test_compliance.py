@@ -46,17 +46,33 @@ def test_list_unsubscribe_headers_one_click():
     assert h["List-Unsubscribe"].startswith("<http")
 
 
-def test_footer_includes_postal_address():
-    assert "1 Test St, Taipei" in footer_text("a@b.com", _IDENT)
-    assert "Unsubscribe" in footer_text("a@b.com", _IDENT)
+def test_footer_text_has_hardcoded_brand_block_and_no_postal_address():
+    text = footer_text("a@b.com", _IDENT)
+    # Hardcoded Pounds Network brand block, independent of the identity.
+    assert "Pounds Network" in text
+    assert "AI-Powered Marketing Campaigns" in text
+    assert "Pounds.Network | gm@wing.studio | (425)628-4276 | Seattle, WA" in text
+    # Postal address is intentionally no longer shown in the footer.
+    assert "1 Test St, Taipei" not in text
+    # Unsubscribe stays (List-Unsubscribe header + link).
+    assert "Unsubscribe" in text
+    # The env-driven sender/company line is no longer the footer heading.
+    assert "Steven Wu · Awkns" not in text
 
 
-def test_footer_html_bold_heading_and_muted_contact_line():
+def test_footer_html_hardcoded_brand_heading_and_no_postal_address():
     html = footer_html("a@b.com", _IDENT)
-    assert '<div style="font-weight:600;color:#202124">Steven Wu · Awkns</div>' in html
-    assert "1 Test St, Taipei" in html
+    # Bold brand heading, hardcoded (not the identity's "Steven Wu · Awkns").
+    assert '<div style="font-weight:600;color:#202124">Pounds Network</div>' in html
+    assert "Steven Wu · Awkns" not in html
+    # Muted tagline + contact line, verbatim from image 2.
+    assert "AI-Powered Marketing Campaigns" in html
+    assert "Pounds.Network | gm@wing.studio | (425)628-4276 | Seattle, WA" in html
+    # Postal address intentionally removed from the footer.
+    assert "1 Test St, Taipei" not in html
+    # Unsubscribe link stays, with no dangling " · " separator before it.
     assert "Unsubscribe" in html
-    assert html.index("Steven Wu · Awkns") < html.index("1 Test St, Taipei")
+    assert " · <a href" not in html
 
 
 def test_footer_html_no_address_omits_dangling_separator():
