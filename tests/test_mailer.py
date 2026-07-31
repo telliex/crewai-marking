@@ -44,6 +44,21 @@ def test_render_fills_placeholders():
     assert "<p" in r.html  # inbox-friendly paragraphs
 
 
+def test_footer_hidden_when_show_footer_false(monkeypatch):
+    from awkns_outreach.send import mailer
+    monkeypatch.setattr(mailer.settings, "outreach_show_footer", False)
+    r = render_step(_lead(angle="Your stories would animate beautifully."),
+                    _campaign(), 0, "k@toyota.co.jp", steps=_SEQUENCE)
+    # Body still renders as normal...
+    assert "Hi Kenji," in r.text
+    assert "Your stories would animate beautifully." in r.text
+    # ...but the whole footer block is gone from both parts.
+    assert "Pounds Network" not in r.text
+    assert "Unsubscribe" not in r.text
+    assert "Pounds Network" not in r.html
+    assert "Unsubscribe" not in r.html
+
+
 def test_angle_fallback_when_missing():
     r = render_step(_lead(angle=None, vars=None), _campaign(), 0, "k@toyota.co.jp", steps=_SEQUENCE)
     assert "genuinely useful for Toyota" in r.text

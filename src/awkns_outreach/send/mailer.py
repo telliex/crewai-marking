@@ -221,10 +221,15 @@ def _render_email(
     else:
         body_html = _text_to_html(body)
         body_text = body
+    # Footer is a temporary kill switch (OUTREACH_SHOW_FOOTER). When off, send
+    # the body alone — the List-Unsubscribe header is still added at send time.
+    if settings.outreach_show_footer:
+        body_text = body_text + "\n" + footer_text(email, ident)
+        body_html = body_html + footer_html(email, ident)
     return RenderedEmail(
         subject=subject,
-        text=body_text + "\n" + footer_text(email, ident),
-        html=_wrap_html(body_html + footer_html(email, ident)),
+        text=body_text,
+        html=_wrap_html(body_html),
         attachments=attachments or [],
     )
 
