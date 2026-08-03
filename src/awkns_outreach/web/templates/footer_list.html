@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% import "_buttons.html" as btn %}
 {% block title %}Footers — Awkns Outreach{% endblock %}
 {% block content %}
 <div class="flex items-center justify-between mb-4">
@@ -44,20 +45,20 @@
           <span class="text-slate-400 text-xs">—</span>
           {% else %}
           <div class="flex items-center gap-2">
-            <a href="/settings/footers/{{ f.id }}/edit" class="text-blue-700 hover:underline">Edit</a>
+            <a href="/settings/footers/{{ f.id }}/edit" class="{{ btn.cls('neutral') }}">Edit</a>
             <form method="post" action="/settings/footers/{{ f.id }}/edit" class="inline">
               {% if f.status == 'archived' %}
               <input type="hidden" name="action" value="unarchive">
-              <button type="submit" class="text-blue-700 hover:underline">Unarchive</button>
+              <button type="submit" class="{{ btn.cls('primary') }}">Unarchive</button>
               {% else %}
               <input type="hidden" name="action" value="archive">
-              <button type="submit" class="text-amber-700 hover:underline">Archive</button>
+              <button type="submit" class="{{ btn.cls('danger') }}">Archive</button>
               {% endif %}
             </form>
             <form method="post" action="/settings/footers/{{ f.id }}/edit" class="inline"
                   onsubmit="return confirm('Delete this footer? Emails using it fall back to the Default footer.');">
               <input type="hidden" name="action" value="delete">
-              <button type="submit" class="text-red-700 hover:underline">Delete</button>
+              <button type="submit" class="{{ btn.cls('danger_solid') }}">Delete</button>
             </form>
           </div>
           {% endif %}

@@ -1,0 +1,16 @@
+{# Shared action-button styles. Import and call cls(variant) for the class string:
+     {% import "_buttons.html" as btn %}
+     <button class="{{ btn.cls('danger') }}">Delete</button>
+   Variants: neutral, primary, success, warn, danger, danger_solid, dark_solid, disabled #}
+{%- macro cls(variant='neutral') -%}
+inline-flex items-center rounded border px-2.5 py-1 text-xs font-medium transition-colors
+{%- if variant == 'neutral' %} border-slate-300 text-slate-700 hover:bg-slate-100
+{%- elif variant == 'primary' %} border-blue-300 text-blue-700 hover:bg-blue-50
+{%- elif variant == 'success' %} border-green-300 text-green-700 hover:bg-green-50
+{%- elif variant == 'warn' %} border-amber-300 text-amber-700 hover:bg-amber-50
+{%- elif variant == 'danger' %} border-red-300 text-red-700 hover:bg-red-50
+{%- elif variant == 'danger_solid' %} border-red-600 bg-red-600 text-white hover:bg-red-700
+{%- elif variant == 'dark_solid' %} border-slate-900 bg-slate-900 text-white hover:bg-slate-800
+{%- elif variant == 'disabled' %} border-slate-200 text-slate-300 cursor-not-allowed
+{%- endif -%}
+{%- endmacro -%}

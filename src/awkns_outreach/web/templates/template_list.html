@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% import "_buttons.html" as btn %}
 {% block title %}Email templates — Awkns Outreach{% endblock %}
 {% block content %}
 <div class="flex items-center justify-between mb-4">
@@ -40,19 +41,19 @@
         <td class="px-3 py-2">
           <div class="flex items-center gap-2">
             {% if t.status != 'archived' %}
-            <a href="/templates/{{ t.id }}/edit" class="text-blue-700 hover:underline">Edit</a>
+            <a href="/templates/{{ t.id }}/edit" class="{{ btn.cls('neutral') }}">Edit</a>
             {% endif %}
             <form method="post" action="/templates/{{ t.id }}/clone" class="inline">
-              <button type="submit" class="text-blue-700 hover:underline">Clone</button>
+              <button type="submit" class="{{ btn.cls('primary') }}">Clone</button>
             </form>
             <form method="post" action="/templates/{{ t.id }}/status" class="inline">
               <input type="hidden" name="status" value="{{ status_filter }}">
               {% if t.status == 'archived' %}
               <input type="hidden" name="action" value="unarchive">
-              <button type="submit" class="text-blue-700 hover:underline">Unarchive</button>
+              <button type="submit" class="{{ btn.cls('primary') }}">Unarchive</button>
               {% else %}
               <input type="hidden" name="action" value="archive">
-              <button type="submit" class="text-red-700 hover:underline">Archive</button>
+              <button type="submit" class="{{ btn.cls('danger') }}">Archive</button>
               {% endif %}
             </form>
           </div>

@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% import "_buttons.html" as btn %}
 {% block title %}Mailboxes — Awkns Outreach{% endblock %}
 {% block content %}
 <div class="flex items-center justify-between mb-4">
@@ -54,16 +55,16 @@
           <div class="flex items-center gap-2 whitespace-nowrap">
             {% if mb.status != "disconnected" %}
             <form method="post" action="/mailboxes/{{ mb.id }}/poll">
-              <button class="text-blue-700 hover:underline">Check replies now</button>
+              <button class="{{ btn.cls('neutral') }}">Check replies now</button>
             </form>
             {% endif %}
             <form method="post" action="/mailboxes/{{ mb.id }}/reconnect">
-              <button class="text-blue-700 hover:underline">Reconnect</button>
+              <button class="{{ btn.cls('primary') }}">Reconnect</button>
             </form>
             {% if mb.status != "disconnected" %}
             <form method="post" action="/mailboxes/{{ mb.id }}/disconnect"
                   onsubmit="return confirm('Disconnect {{ mb.email }}? Campaigns using it will fail fast until reconnected.');">
-              <button class="text-red-700 hover:underline">Disconnect</button>
+              <button class="{{ btn.cls('danger') }}">Disconnect</button>
             </form>
             {% endif %}
           </div>

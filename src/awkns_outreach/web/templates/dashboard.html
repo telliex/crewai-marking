@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% import "_buttons.html" as btn %}
 {% block content %}
 <div class="flex items-center justify-between mb-4">
   <h1 class="text-lg font-semibold">Campaigns</h1>
@@ -67,39 +68,39 @@
         <td class="px-3 py-2">
           <div class="flex items-center gap-2 whitespace-nowrap">
             {% if archived %}
-            <span class="text-slate-300 cursor-not-allowed" title="Archived campaigns can’t be edited — unarchive first.">Edit</span>
+            <span class="{{ btn.cls('disabled') }}" title="Archived campaigns can’t be edited — unarchive first.">Edit</span>
             <form method="post" action="/campaigns/{{ c.id }}/status">
               <input type="hidden" name="action" value="unarchive">
               <input type="hidden" name="status" value="{{ status_filter }}">
               <input type="hidden" name="page" value="{{ page }}">
-              <button class="text-blue-700 hover:underline">Unarchive</button>
+              <button class="{{ btn.cls('primary') }}">Unarchive</button>
             </form>
             <form method="post" action="/campaigns/{{ c.id }}/status"
               onsubmit="return confirm('Delete “{{ c.name }}” permanently? This also deletes its leads and can\'t be undone.');">
               <input type="hidden" name="action" value="delete">
               <input type="hidden" name="status" value="{{ status_filter }}">
               <input type="hidden" name="page" value="{{ page }}">
-              <button class="text-red-700 hover:underline">Delete</button>
+              <button class="{{ btn.cls('danger_solid') }}">Delete</button>
             </form>
             {% else %}
-            <a href="/campaigns/{{ c.id }}/edit" class="text-blue-700 hover:underline">Edit</a>
+            <a href="/campaigns/{{ c.id }}/edit" class="{{ btn.cls('neutral') }}">Edit</a>
             {% if c.status == "active" %}
             <form method="post" action="/campaigns/{{ c.id }}/status">
               <input type="hidden" name="action" value="pause">
               <input type="hidden" name="status" value="{{ status_filter }}">
               <input type="hidden" name="page" value="{{ page }}">
-              <button class="text-blue-700 hover:underline">Pause</button>
+              <button class="{{ btn.cls('warn') }}">Pause</button>
             </form>
             {% else %}
             <form method="post" action="/campaigns/{{ c.id }}/status">
               <input type="hidden" name="action" value="resume">
               <input type="hidden" name="status" value="{{ status_filter }}">
               <input type="hidden" name="page" value="{{ page }}">
-              <button class="text-blue-700 hover:underline">Resume</button>
+              <button class="{{ btn.cls('primary') }}">Resume</button>
             </form>
             {% endif %}
             <button type="button"
-              class="text-red-700 hover:underline"
+              class="{{ btn.cls('danger') }}"
               data-archive-open
               data-name="{{ c.name }}"
               data-leads="{{ r.stats.total }}"

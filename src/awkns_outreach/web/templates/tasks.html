@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% import "_buttons.html" as btn %}
 {% block title %}Tasks — Awkns Outreach{% endblock %}
 {% macro window_checkboxes(t) %}
   <label class="flex items-center gap-1 text-xs text-slate-600">
@@ -99,7 +100,7 @@
         <td class="px-3 py-2">
           <div class="flex items-center gap-2 flex-wrap">
             {% if t.status == 'draft' %}
-            <button type="button" class="text-blue-700 hover:underline"
+            <button type="button" class="{{ btn.cls('neutral') }}"
                     onclick="document.getElementById('sched-{{ t.id }}').showModal()">Schedule…</button>
             <dialog id="sched-{{ t.id }}" class="rounded-lg p-4 w-96">
               <form method="post" action="/tasks/{{ t.id }}/schedule" class="flex flex-col gap-2">
@@ -118,7 +119,7 @@
                 </div>
               </form>
             </dialog>
-            <button type="button" class="text-green-700 hover:underline"
+            <button type="button" class="{{ btn.cls('success') }}"
                     onclick="document.getElementById('start-{{ t.id }}').showModal()">Start now…</button>
             <dialog id="start-{{ t.id }}" class="rounded-lg p-4 w-96">
               <form method="post" action="/tasks/{{ t.id }}/lifecycle" class="flex flex-col gap-2">
@@ -135,13 +136,13 @@
             <form method="post" action="/tasks/{{ t.id }}/edit" class="inline"
                   onsubmit="return confirm('Delete this draft task? This can\'t be undone.');">
               <input type="hidden" name="action" value="delete">
-              <button type="submit" class="text-red-700 hover:underline">Delete</button>
+              <button type="submit" class="{{ btn.cls('danger_solid') }}">Delete</button>
             </form>
             {% elif t.status == 'scheduled' %}
             <form method="post" action="/tasks/{{ t.id }}/unschedule" class="inline">
-              <button type="submit" class="text-slate-700 hover:underline">Unschedule</button>
+              <button type="submit" class="{{ btn.cls('neutral') }}">Unschedule</button>
             </form>
-            <button type="button" class="text-green-700 hover:underline"
+            <button type="button" class="{{ btn.cls('success') }}"
                     onclick="document.getElementById('start-{{ t.id }}').showModal()">Start now…</button>
             <dialog id="start-{{ t.id }}" class="rounded-lg p-4 w-96">
               <form method="post" action="/tasks/{{ t.id }}/lifecycle" class="flex flex-col gap-2">
@@ -158,14 +159,14 @@
             {% elif t.status == 'running' %}
             <form method="post" action="/tasks/{{ t.id }}/lifecycle" class="inline">
               <input type="hidden" name="action" value="pause">
-              <button type="submit" class="text-amber-700 hover:underline">Pause</button>
+              <button type="submit" class="{{ btn.cls('warn') }}">Pause</button>
             </form>
             <form method="post" action="/tasks/{{ t.id }}/lifecycle" class="inline"
                   onsubmit="return confirm('Stop this task? This can\'t be resumed.');">
               <input type="hidden" name="action" value="stop">
-              <button type="submit" class="text-red-700 hover:underline">Stop</button>
+              <button type="submit" class="{{ btn.cls('danger') }}">Stop</button>
             </form>
-            <button type="button" class="rounded bg-slate-900 text-white text-xs px-2 py-1"
+            <button type="button" class="{{ btn.cls('dark_solid') }}"
                     onclick="document.getElementById('run-{{ t.id }}').showModal()">Run…</button>
             <dialog id="run-{{ t.id }}" class="rounded-lg p-4 w-96">
               <form method="post" action="/tasks/{{ t.id }}/run" class="flex flex-col gap-2">
@@ -187,12 +188,12 @@
             {% elif t.status == 'paused' %}
             <form method="post" action="/tasks/{{ t.id }}/lifecycle" class="inline">
               <input type="hidden" name="action" value="resume">
-              <button type="submit" class="text-green-700 hover:underline">Resume</button>
+              <button type="submit" class="{{ btn.cls('success') }}">Resume</button>
             </form>
             <form method="post" action="/tasks/{{ t.id }}/lifecycle" class="inline"
                   onsubmit="return confirm('Stop this task? This can\'t be resumed.');">
               <input type="hidden" name="action" value="stop">
-              <button type="submit" class="text-red-700 hover:underline">Stop</button>
+              <button type="submit" class="{{ btn.cls('danger') }}">Stop</button>
             </form>
             {% else %}
             <span class="text-slate-400 text-xs">—</span>
