@@ -20,8 +20,9 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from awkns_outreach.compliance import active_footers, resolve_footer
 from awkns_outreach.config import settings
-from awkns_outreach.db.models import Campaign, EmailTemplate, Lead, Mailbox
+from awkns_outreach.db.models import Campaign, EmailTemplate, FooterTemplate, Lead, Mailbox
 from awkns_outreach.send.mailer import (
     render_template_preview,
     sanitize_rich_body,
@@ -115,13 +116,36 @@ def _connected_mailboxes(db: Session) -> list[Mailbox]:
     ).all()
 
 
-def _render_preview(subject: str, body: str, attachments: Optional[list[dict]] = None):
-    return render_template_preview(subject, body, _PREVIEW_EMAIL, attachments=attachments)
+def _norm_footer_choice(choice: str) -> Optional[str]:
+    """Store NULL for the default footer, the raw value otherwise."""
+    c = (choice or "").strip()
+    return None if c in ("", "default") else c
+
+
+def _footer_ctx(db: Session, current: Optional[str]) -> dict:
+    """Context for the footer <select> macro: options + current selection."""
+    foots = active_footers(db)
+    default_name = next((f.name for f in foots if f.is_default), "Default")
+    return {
+        "footers": foots,
+        "default_footer_name": default_name,
+        "footer_choice": current or "default",
+    }
+
+
+def _render_preview(
+    db: Session, subject: str, body: str, attachments: Optional[list[dict]] = None,
+    footer_choice: str = "default",
+):
+    return render_template_preview(
+        subject, body, _PREVIEW_EMAIL, attachments=attachments,
+        footer=resolve_footer(db, footer_choice),
+    )
 
 
 def _send_test_email_once(
     subject: str, body: str, mailbox: Optional[Mailbox], recipient: str,
-    attachments: Optional[list[dict]] = None,
+    attachments: Optional[list[dict]] = None, footer: Optional[FooterTemplate] = None,
 ):
     """Build a throwaway Campaign/Lead (never persisted) and send through
     send_outreach_email's normal Gmail/Resend dispatch — same path a real
@@ -141,15 +165,18 @@ def _send_test_email_once(
         "key": "test", "delay_days": 0, "subject": subject, "body": body,
         "attachments": attachments or [],
     }]
-    return send_outreach_email(test_lead, test_campaign, recipient, 0, steps, dry_run=False)
+    return send_outreach_email(
+        test_lead, test_campaign, recipient, 0, steps, dry_run=False, footer=footer
+    )
 
 
 def _send_test_email(
     db: Session, subject: str, body: str, mailbox_id: str, attachments: list[dict],
+    footer: Optional[FooterTemplate] = None,
 ) -> str:
     mailbox = db.get(Mailbox, mailbox_id) if mailbox_id else None
     recipient = mailbox.email if mailbox else settings.outreach_from
-    res = _send_test_email_once(subject, body, mailbox, recipient, attachments)
+    res = _send_test_email_once(subject, body, mailbox, recipient, attachments, footer)
     if res.ok:
         return f"Test email sent! Check your inbox at {recipient}."
     return f"Test send failed: {res.error}"
@@ -157,6 +184,7 @@ def _send_test_email(
 
 def _send_test_emails_to_custom_recipients(
     subject: str, body: str, raw: str, attachments: list[dict],
+    footer: Optional[FooterTemplate] = None,
 ) -> str:
     """One independent send per comma-separated address, always via Resend
     (custom recipients aren't "me", so there's no mailbox to send-as). `ok`
@@ -171,7 +199,7 @@ def _send_test_emails_to_custom_recipients(
         if not _EMAIL_RE.match(addr):
             lines.append(f"{addr}: skipped — invalid email format")
             continue
-        res = _send_test_email_once(subject, body, None, addr, attachments)
+        res = _send_test_email_once(subject, body, None, addr, attachments, footer)
         lines.append(f"{addr}: sent" if res.ok else f"{addr}: failed — {res.error}")
     return "\n".join(lines)
 
@@ -213,9 +241,12 @@ async def upload_template_attachment(file: UploadFile = File(...)):
 @router.post("/templates/preview-fragment", response_class=HTMLResponse)
 def preview_fragment(
     request: Request, subject: str = Form(""), body: str = Form(""),
-    attachments: str = Form("[]"),
+    attachments: str = Form("[]"), footer_choice: str = Form("default"),
+    db: Session = Depends(get_db),
 ):
-    preview = _render_preview(subject, body, _parse_attachments(attachments))
+    preview = _render_preview(
+        db, subject, body, _parse_attachments(attachments), footer_choice
+    )
     return templates.TemplateResponse(
         request, "_template_preview_fragment.html", {"preview": preview},
     )
@@ -225,14 +256,15 @@ def preview_fragment(
 def test_send_fragment(
     request: Request, subject: str = Form(""), body: str = Form(""),
     mailbox_id: str = Form(""), custom_recipients: str = Form(""),
-    attachments: str = Form("[]"),
+    attachments: str = Form("[]"), footer_choice: str = Form("default"),
     db: Session = Depends(get_db),
 ):
     parsed_attachments = _parse_attachments(attachments)
+    footer = resolve_footer(db, footer_choice)
     if mailbox_id == _CUSTOM_RECIPIENTS:
-        msg = _send_test_emails_to_custom_recipients(subject, body, custom_recipients, parsed_attachments)
+        msg = _send_test_emails_to_custom_recipients(subject, body, custom_recipients, parsed_attachments, footer)
     else:
-        msg = _send_test_email(db, subject, body, mailbox_id, parsed_attachments)
+        msg = _send_test_email(db, subject, body, mailbox_id, parsed_attachments, footer)
     return templates.TemplateResponse(
         request, "_template_test_send_fragment.html",
         {
@@ -269,12 +301,13 @@ def new_template_form(request: Request, db: Session = Depends(get_db)):
         request, "template_edit.html",
         {
             "t": None, "placeholders": SEQUENCE_PLACEHOLDERS, "msg": None,
-            "preview": _render_preview("", ""),
+            "preview": _render_preview(db, "", ""),
             "mailboxes": _connected_mailboxes(db),
             "selected_mailbox_id": None,
             "custom_recipients": None,
             "test_send_msg": None,
             "attachments_json": "[]",
+            **_footer_ctx(db, "default"),
         },
     )
 
@@ -282,12 +315,13 @@ def new_template_form(request: Request, db: Session = Depends(get_db)):
 @router.post("/templates")
 def create_template(
     name: str = Form(...), subject: str = Form(""), body: str = Form(""),
-    attachments: str = Form("[]"),
+    attachments: str = Form("[]"), footer_choice: str = Form("default"),
     db: Session = Depends(get_db),
 ):
     t = EmailTemplate(
         name=name.strip(), subject=subject.strip(), body=_clean_body(body),
         attachments=_parse_attachments(attachments),
+        footer_choice=_norm_footer_choice(footer_choice),
     )
     db.add(t)
     db.commit()
@@ -306,12 +340,15 @@ def edit_template_form(
         request, "template_edit.html",
         {
             "t": t, "placeholders": SEQUENCE_PLACEHOLDERS, "msg": msg,
-            "preview": _render_preview(t.subject, t.body, t.attachments),
+            "preview": _render_preview(
+                db, t.subject, t.body, t.attachments, t.footer_choice or "default"
+            ),
             "mailboxes": _connected_mailboxes(db),
             "selected_mailbox_id": None,
             "custom_recipients": None,
             "test_send_msg": None,
             "attachments_json": json.dumps(t.attachments),
+            **_footer_ctx(db, t.footer_choice),
         },
     )
 
@@ -335,6 +372,7 @@ def update_template(
     subject: str = Form(""),
     body: str = Form(""),
     attachments: str = Form("[]"),
+    footer_choice: str = Form("default"),
     db: Session = Depends(get_db),
 ):
     t = _get_template(db, template_id)
@@ -354,6 +392,7 @@ def update_template(
     t.subject = subject.strip()
     t.body = _clean_body(body)
     t.attachments = _parse_attachments(attachments)
+    t.footer_choice = _norm_footer_choice(footer_choice)
     db.commit()
     return RedirectResponse(f"/templates/{t.id}/edit?msg=Template saved.", status_code=303)
 

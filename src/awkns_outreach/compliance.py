@@ -13,14 +13,13 @@ import base64
 import hashlib
 import hmac
 from datetime import datetime, timezone
-from html import escape
 from typing import Optional
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from awkns_outreach.config import settings
-from awkns_outreach.db.models import Lead, Suppression
+from awkns_outreach.db.models import FooterTemplate, Lead, Suppression
 from awkns_outreach.identity import Identity, resolve_identity
 
 
@@ -65,13 +64,24 @@ def unsubscribe_url(email: str) -> str:
 
 # --- Headers + footer ------------------------------------------------------
 
-# Hardcoded Pounds Network brand block shown at the top of every footer.
-# Deliberately NOT driven by the sender identity (env OUTREACH_* / campaign
-# override): the outbound brand is always Pounds Network regardless of who the
-# individual sender is. Edit these three lines to change the branding.
-_BRAND_NAME = "Pounds Network"
-_BRAND_TAGLINE = "AI-Powered Marketing Campaigns"
-_BRAND_CONTACT = "Pounds.Network | gm@wing.studio | (425)628-4276 | Seattle, WA"
+# The seeded "Default (Pounds Network)" footer, also used as a fallback when no
+# is_default FooterTemplate row exists. `{unsubscribe_url}` is substituted
+# per-recipient by footer_html / footer_text. Keep in sync with the seed in
+# migration 0011_footer_templates.
+DEFAULT_FOOTER_HTML = (
+    '<br><br><div style="font-size:13px;line-height:1.6">'
+    '<div style="font-weight:600;color:#202124">Pounds Network</div>'
+    '<div style="color:#9aa0a6;font-size:12px">AI-Powered Marketing Campaigns</div>'
+    '<div style="color:#9aa0a6;font-size:12px">Pounds.Network | gm@wing.studio | (425)628-4276 | Seattle, WA</div>'
+    '<div style="color:#9aa0a6;font-size:12px">'
+    '<a href="{unsubscribe_url}" style="color:#9aa0a6">Unsubscribe</a> '
+    "and I won't email again.</div></div>"
+)
+DEFAULT_FOOTER_TEXT = (
+    "\n—\nPounds Network\nAI-Powered Marketing Campaigns\n"
+    "Pounds.Network | gm@wing.studio | (425)628-4276 | Seattle, WA\n"
+    "Not relevant? Unsubscribe and I won't email again: {unsubscribe_url}"
+)
 
 def list_unsubscribe_headers(email: str, identity: Optional[Identity] = None) -> dict[str, str]:
     ident = identity or resolve_identity()
@@ -85,26 +95,47 @@ def list_unsubscribe_headers(email: str, identity: Optional[Identity] = None) ->
     }
 
 
-def footer_text(email: str, identity: Optional[Identity] = None) -> str:
-    # `identity` is accepted for a stable API but no longer used: the brand
-    # block is hardcoded and the postal address is intentionally not shown.
-    lines = ["", "—", _BRAND_NAME, _BRAND_TAGLINE, _BRAND_CONTACT]
-    lines.append(f"Not relevant? Unsubscribe and I won't email again: {unsubscribe_url(email)}")
-    return "\n".join(lines)
+def resolve_footer(db: Session, choice: Optional[str]) -> Optional[FooterTemplate]:
+    """Map a `footer_choice` to the FooterTemplate to render, or None to omit.
 
-
-def footer_html(email: str, identity: Optional[Identity] = None) -> str:
-    # `identity` is accepted for a stable API but no longer used: the brand
-    # block is hardcoded and the postal address is intentionally not shown.
-    return (
-        '<br><br><div style="font-size:13px;line-height:1.6">'
-        f'<div style="font-weight:600;color:#202124">{escape(_BRAND_NAME)}</div>'
-        f'<div style="color:#9aa0a6;font-size:12px">{escape(_BRAND_TAGLINE)}</div>'
-        f'<div style="color:#9aa0a6;font-size:12px">{escape(_BRAND_CONTACT)}</div>'
-        f'<div style="color:#9aa0a6;font-size:12px">'
-        f'<a href="{unsubscribe_url(email)}" style="color:#9aa0a6">Unsubscribe</a> '
-        "and I won't email again.</div></div>"
+    "none" → None. "default"/None → the is_default row (or a synthetic default
+    built from DEFAULT_FOOTER_* when none is seeded). "<id>" → that row, falling
+    back to the default if it was archived/deleted."""
+    if choice == "none":
+        return None
+    if choice and choice != "default":
+        footer = db.get(FooterTemplate, choice)
+        if footer is not None:
+            return footer
+        # Referenced footer is gone — fall through to the default.
+    default = db.scalar(
+        select(FooterTemplate).where(FooterTemplate.is_default.is_(True))
     )
+    if default is not None:
+        return default
+    return FooterTemplate(
+        name="Default", body_html=DEFAULT_FOOTER_HTML, body_text=DEFAULT_FOOTER_TEXT,
+        is_default=True,
+    )
+
+
+def active_footers(db: Session) -> list[FooterTemplate]:
+    """Active footers for a footer <select>, is_default first then by name."""
+    return list(db.scalars(
+        select(FooterTemplate)
+        .where(FooterTemplate.status == "active")
+        .order_by(FooterTemplate.is_default.desc(), FooterTemplate.name)
+    ).all())
+
+
+def footer_text(footer: FooterTemplate, email: str) -> str:
+    """Render a footer's plain-text body, substituting the per-recipient link."""
+    return footer.body_text.replace("{unsubscribe_url}", unsubscribe_url(email))
+
+
+def footer_html(footer: FooterTemplate, email: str) -> str:
+    """Render a footer's HTML body, substituting the per-recipient link."""
+    return footer.body_html.replace("{unsubscribe_url}", unsubscribe_url(email))
 
 
 def can_send_legally(identity: Optional[Identity] = None) -> tuple[bool, Optional[str]]:

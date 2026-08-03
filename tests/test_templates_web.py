@@ -86,6 +86,36 @@ def test_create_edit_delete_template(client, session):
     assert session.query(EmailTemplate).count() == 0
 
 
+def test_template_persists_footer_choice(client, session):
+    from awkns_outreach.db.models import FooterTemplate
+    footer = FooterTemplate(name="Promo", body_html="p", body_text="p")
+    session.add(footer)
+    session.commit()
+
+    # "default" is normalized to NULL.
+    r = client.post("/templates", auth=AUTH, follow_redirects=False, data={
+        "name": "T", "subject": "s", "body": "b", "footer_choice": "default",
+    })
+    assert r.status_code == 303
+    t = session.query(EmailTemplate).one()
+    assert t.footer_choice is None
+
+    # A specific footer id is stored as-is.
+    client.post(f"/templates/{t.id}/edit", auth=AUTH, follow_redirects=False, data={
+        "action": "save", "name": "T", "subject": "s", "body": "b",
+        "footer_choice": footer.id,
+    })
+    session.refresh(t)
+    assert t.footer_choice == footer.id
+
+    # "none" is stored so this email sends without a footer.
+    client.post(f"/templates/{t.id}/edit", auth=AUTH, follow_redirects=False, data={
+        "action": "save", "name": "T", "subject": "s", "body": "b", "footer_choice": "none",
+    })
+    session.refresh(t)
+    assert t.footer_choice == "none"
+
+
 def test_new_template_defaults_to_active_status(client, session):
     r = client.post("/templates", auth=AUTH, follow_redirects=False, data={
         "name": "Intro", "subject": "s", "body": "b",

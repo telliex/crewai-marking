@@ -1,5 +1,6 @@
 {% extends "base.html" %}
 {% from "_rich_editor.html" import rich_editor %}
+{% from "_footer_select.html" import footer_select %}
 {% block title %}{% if t %}Edit {{ t.name }}{% else %}New template{% endif %} — Awkns Outreach{% endblock %}
 {% block head_extra %}
 <link href="https://cdn.quilljs.com/1.3.7/quill.snow.css" rel="stylesheet">
@@ -12,7 +13,7 @@
 <div class="mb-4 rounded border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600">
   Placeholders (filled per lead):
   {% for p in placeholders %}<code class="mx-0.5 rounded bg-white border px-1">{{ '{' ~ p ~ '}' }}</code>{% endfor %}
-  · The identity footer + unsubscribe line are added automatically.
+  · The footer below is appended automatically (choose one, or None).
 </div>
 
 <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
@@ -28,11 +29,17 @@
         <input name="subject" id="subject-field" value="{{ t.subject if t else '' }}" class="w-full border rounded px-2 py-1.5"
                placeholder="quick idea for {company}"
                hx-post="/templates/preview-fragment" hx-trigger="input changed delay:500ms"
-               hx-target="#preview-pane" hx-include="#subject-field,#body-field,#attachments-field">
+               hx-target="#preview-pane" hx-include="#subject-field,#body-field,#attachments-field,#footer-field">
+      </div>
+      <div>
+        <label class="block text-sm font-medium mb-1">Footer</label>
+        {{ footer_select("footer_choice", footer_choice, default_footer_name, footers,
+            attrs='id="footer-field" hx-post="/templates/preview-fragment" hx-trigger="change" hx-target="#preview-pane" hx-include="#subject-field,#body-field,#attachments-field,#footer-field"',
+            cls="w-full border rounded px-2 py-1.5") }}
       </div>
       <div>
         <label class="block text-sm font-medium mb-1">Body</label>
-        {% set editor_hx_attrs = 'hx-post="/templates/preview-fragment" hx-trigger="input changed delay:500ms" hx-target="#preview-pane" hx-include="#subject-field,#body-field,#attachments-field"' %}
+        {% set editor_hx_attrs = 'hx-post="/templates/preview-fragment" hx-trigger="input changed delay:500ms" hx-target="#preview-pane" hx-include="#subject-field,#body-field,#attachments-field,#footer-field"' %}
         {{ rich_editor(t.body if t else '', attachments_json, legacy_ids=true,
                         extra_body_attrs=editor_hx_attrs, extra_attachments_attrs=editor_hx_attrs) }}
       </div>

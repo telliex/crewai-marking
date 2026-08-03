@@ -26,9 +26,15 @@ from typing import Any, Optional
 import httpx
 import nh3
 
-from awkns_outreach.compliance import footer_html, footer_text, list_unsubscribe_headers
+from awkns_outreach.compliance import (
+    DEFAULT_FOOTER_HTML,
+    DEFAULT_FOOTER_TEXT,
+    footer_html,
+    footer_text,
+    list_unsubscribe_headers,
+)
 from awkns_outreach.config import settings
-from awkns_outreach.db.models import Campaign, Lead, Mailbox
+from awkns_outreach.db.models import Campaign, FooterTemplate, Lead, Mailbox
 from awkns_outreach.gmail.api import ensure_fresh_token, send_raw
 from awkns_outreach.gmail.mime import Attachment, build_raw_message, new_message_id
 from awkns_outreach.gmail.oauth import NeedsReconnect
@@ -208,9 +214,25 @@ class SendResult:
     error: Optional[str] = None
 
 
+# Footer argument sentinel: a caller that doesn't specify one gets the default
+# footer (today's behaviour). The engine/preview/test-send resolve the email's
+# `footer_choice` to a FooterTemplate (or None to omit) and pass it explicitly.
+_DEFAULT_FOOTER = object()
+
+
+def _resolve_footer_arg(footer: Any) -> Optional[FooterTemplate]:
+    if footer is _DEFAULT_FOOTER:
+        return FooterTemplate(
+            name="Default", body_html=DEFAULT_FOOTER_HTML,
+            body_text=DEFAULT_FOOTER_TEXT, is_default=True,
+        )
+    return footer  # a FooterTemplate to render, or None to omit the footer
+
+
 def _render_email(
     subject_tpl: str, body_tpl: str, lead: Lead, ident: Identity, email: str,
     ctx_cls: type[_SafeDict] = _SafeDict, attachments: Optional[list[dict]] = None,
+    footer: Any = _DEFAULT_FOOTER,
 ) -> RenderedEmail:
     ctx = ctx_cls(_context(lead, ident))
     subject = _render(subject_tpl, ctx)
@@ -221,11 +243,13 @@ def _render_email(
     else:
         body_html = _text_to_html(body)
         body_text = body
-    # Footer is a temporary kill switch (OUTREACH_SHOW_FOOTER). When off, send
-    # the body alone — the List-Unsubscribe header is still added at send time.
-    if settings.outreach_show_footer:
-        body_text = body_text + "\n" + footer_text(email, ident)
-        body_html = body_html + footer_html(email, ident)
+    # Append the chosen footer, if any. `footer=None` (footer_choice "none")
+    # sends the body alone — the List-Unsubscribe header is still added at send
+    # time in _send_via_gmail / the Resend payload.
+    footer_obj = _resolve_footer_arg(footer)
+    if footer_obj is not None:
+        body_text = body_text + "\n" + footer_text(footer_obj, email)
+        body_html = body_html + footer_html(footer_obj, email)
     return RenderedEmail(
         subject=subject,
         text=body_text,
@@ -237,6 +261,7 @@ def _render_email(
 def render_step(
     lead: Lead, campaign: Campaign, step_index: int, email: str,
     identity: Optional[Identity] = None, *, steps: list[dict],
+    footer: Any = _DEFAULT_FOOTER,
 ) -> RenderedEmail:
     ident = identity or resolve_identity(campaign.sender_identity)
     if step_index >= len(steps):
@@ -244,7 +269,7 @@ def render_step(
     step = steps[step_index]
     return _render_email(
         step.get("subject", ""), step.get("body", ""), lead, ident, email,
-        attachments=step.get("attachments"),
+        attachments=step.get("attachments"), footer=footer,
     )
 
 
@@ -260,7 +285,7 @@ _EXAMPLE_LEAD = Lead(
 
 def render_template_preview(
     subject_tpl: str, body_tpl: str, email: str, identity: Optional[Identity] = None,
-    attachments: Optional[list[dict]] = None,
+    attachments: Optional[list[dict]] = None, footer: Any = _DEFAULT_FOOTER,
 ) -> RenderedEmail:
     """Render a standalone EmailTemplate's subject/body against the hard-coded
     example contact — used by the template library's preview pane. Unlike a
@@ -270,7 +295,7 @@ def render_template_preview(
     ident = identity or resolve_identity()
     return _render_email(
         subject_tpl, body_tpl, _EXAMPLE_LEAD, ident, email,
-        ctx_cls=_PreviewSafeDict, attachments=attachments,
+        ctx_cls=_PreviewSafeDict, attachments=attachments, footer=footer,
     )
 
 
@@ -358,10 +383,10 @@ def _send_via_gmail(
 
 def send_outreach_email(
     lead: Lead, campaign: Campaign, email: str, step_index: int, steps: list[dict],
-    *, dry_run: bool = True,
+    *, dry_run: bool = True, footer: Any = _DEFAULT_FOOTER,
 ) -> SendResult:
     ident = resolve_identity(campaign.sender_identity)
-    rendered = render_step(lead, campaign, step_index, email, ident, steps=steps)
+    rendered = render_step(lead, campaign, step_index, email, ident, steps=steps, footer=footer)
     if dry_run:
         return SendResult(ok=True, id="dry-run", subject=rendered.subject)
 

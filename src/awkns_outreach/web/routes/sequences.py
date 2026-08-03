@@ -13,6 +13,7 @@ single-template editor.
 from __future__ import annotations
 
 import json
+from itertools import zip_longest
 from typing import Optional
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Request
@@ -20,6 +21,7 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from awkns_outreach.compliance import active_footers
 from awkns_outreach.db.models import EmailTemplate, MailSequence, Task
 from awkns_outreach.sequencer.engine import step_delay_minutes
 from awkns_outreach.web.deps import get_db, require_admin, templates
@@ -77,11 +79,22 @@ def _template_options(db: Session) -> list[dict]:
     # Templates as a JSON blob in the page — the "insert template" dropdown
     # copies subject/body/attachments into a step client-side, no round-trip.
     return [
-        {"id": t.id, "name": t.name, "subject": t.subject, "body": t.body, "attachments": t.attachments}
+        {"id": t.id, "name": t.name, "subject": t.subject, "body": t.body,
+         "attachments": t.attachments, "footer_choice": t.footer_choice or "default"}
         for t in db.scalars(
             select(EmailTemplate).where(EmailTemplate.status == "active").order_by(EmailTemplate.name)
         ).all()
     ]
+
+
+def _footer_ctx(db: Session) -> dict:
+    """Footer <select> options for the sequence editor (current selection is
+    per-step, read from each step's own footer_choice in the template)."""
+    foots = active_footers(db)
+    return {
+        "footers": foots,
+        "default_footer_name": next((f.name for f in foots if f.is_default), "Default"),
+    }
 
 
 _DELAY_UNITS = (1440, 60, 1)  # days, hours, minutes — largest unit first
@@ -106,7 +119,7 @@ def _format_delay(minutes: int) -> dict:
     return {"delay_value": value, "delay_unit": unit, "delay_label": label}
 
 
-def _steps_for_editor(steps: list[dict]) -> list[dict]:
+def _steps_for_editor(db: Session, steps: list[dict]) -> list[dict]:
     """Augment each saved step dict with the derived keys the editor
     template needs but doesn't persist: `attachments_json` (for the rich
     editor's hidden attachments-initial field), `preview` (the card's
@@ -120,7 +133,8 @@ def _steps_for_editor(steps: list[dict]) -> list[dict]:
         step = dict(step)
         step["attachments_json"] = json.dumps(step.get("attachments") or [])
         step["preview"] = _render_preview(
-            step.get("subject", ""), step.get("body", ""), step.get("attachments") or []
+            db, step.get("subject", ""), step.get("body", ""), step.get("attachments") or [],
+            step.get("footer_choice") or "default",
         )
         step["delay_minutes"] = step_delay_minutes(step)
         step.update(_format_delay(step["delay_minutes"]))
@@ -130,11 +144,14 @@ def _steps_for_editor(steps: list[dict]) -> list[dict]:
 
 def _build_steps(
     step_key: list[str], delay_minutes: list[str], subject: list[str], body: list[str],
-    attachments: list[str], source_template_id: list[str],
+    attachments: list[str], source_template_id: list[str], footer_choice: list[str],
 ) -> list[dict]:
     steps: list[dict] = []
-    for i, (k, d, subj, b, a, sid) in enumerate(
-        zip(step_key, delay_minutes, subject, body, attachments, source_template_id)
+    # zip_longest (not zip) so a caller that omits the newer footer_choice list
+    # still builds every step — missing entries fall back to "default".
+    for i, (k, d, subj, b, a, sid, fc) in enumerate(
+        zip_longest(step_key, delay_minutes, subject, body, attachments,
+                    source_template_id, footer_choice, fillvalue="")
     ):
         # Skip fully blank rows (a step needs at least a subject or a body).
         if not subj.strip() and not b.strip():
@@ -150,6 +167,7 @@ def _build_steps(
             "body": _clean_body(b),
             "attachments": _parse_attachments(a),
             "source_template_id": sid.strip() or None,
+            "footer_choice": (fc or "default").strip() or "default",
         })
     if steps:
         steps[0]["delay_minutes"] = 0  # first step always fires immediately
@@ -179,9 +197,10 @@ def new_sequence_form(request: Request, db: Session = Depends(get_db), msg: Opti
         request, "mail_sequence_edit.html",
         {
             "seq": None, "template_options": _template_options(db),
-            "steps_for_editor": _steps_for_editor([]),
+            "steps_for_editor": _steps_for_editor(db, []),
             "mailboxes": _connected_mailboxes(db),
             "placeholders": SEQUENCE_PLACEHOLDERS, "form_action": "/sequences", "msg": msg,
+            **_footer_ctx(db),
         },
     )
 
@@ -195,13 +214,16 @@ def create_sequence(
     body: list[str] = Form(default=[]),
     attachments: list[str] = Form(default=[]),
     source_template_id: list[str] = Form(default=[]),
+    footer_choice: list[str] = Form(default=[]),
     db: Session = Depends(get_db),
 ):
     name = name.strip()
     if not name:
         return RedirectResponse("/sequences/new?msg=Name is required.", status_code=303)
 
-    steps = _build_steps(step_key, delay_minutes, subject, body, attachments, source_template_id)
+    steps = _build_steps(
+        step_key, delay_minutes, subject, body, attachments, source_template_id, footer_choice
+    )
     seq = MailSequence(name=name, steps=steps)
     db.add(seq)
     db.commit()
@@ -220,9 +242,10 @@ def edit_sequence_form(
         request, "mail_sequence_edit.html",
         {
             "seq": seq, "template_options": _template_options(db),
-            "steps_for_editor": _steps_for_editor(seq.steps or []),
+            "steps_for_editor": _steps_for_editor(db, seq.steps or []),
             "mailboxes": _connected_mailboxes(db),
             "placeholders": SEQUENCE_PLACEHOLDERS, "form_action": f"/sequences/{seq.id}/edit", "msg": msg,
+            **_footer_ctx(db),
         },
     )
 
@@ -238,6 +261,7 @@ def update_sequence(
     body: list[str] = Form(default=[]),
     attachments: list[str] = Form(default=[]),
     source_template_id: list[str] = Form(default=[]),
+    footer_choice: list[str] = Form(default=[]),
     db: Session = Depends(get_db),
 ):
     seq = _get_sequence(db, seq_id)
@@ -265,7 +289,9 @@ def update_sequence(
         return RedirectResponse(f"/sequences/{seq.id}/edit?msg=Name is required.", status_code=303)
 
     seq.name = name
-    seq.steps = _build_steps(step_key, delay_minutes, subject, body, attachments, source_template_id)
+    seq.steps = _build_steps(
+        step_key, delay_minutes, subject, body, attachments, source_template_id, footer_choice
+    )
     db.commit()
     return RedirectResponse(f"/sequences/{seq.id}/edit?msg=Sequence saved.", status_code=303)
 

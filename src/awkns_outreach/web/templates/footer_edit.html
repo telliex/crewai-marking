@@ -1,0 +1,51 @@
+{% extends "base.html" %}
+{% block title %}{{ "Edit footer" if f else "New footer" }} — Awkns Outreach{% endblock %}
+{% block content %}
+<div class="flex items-center justify-between mb-4">
+  <h1 class="text-lg font-semibold">{{ "Edit footer" if f else "New footer" }}</h1>
+  <a href="/settings/footers" class="text-sm text-slate-500 hover:underline">← All footers</a>
+</div>
+
+<div class="grid md:grid-cols-2 gap-6">
+  <form method="post"
+        action="{{ '/settings/footers/' ~ f.id ~ '/edit' if f else '/settings/footers' }}"
+        class="flex flex-col gap-3">
+    <input type="hidden" name="action" value="save">
+    <label class="text-sm">Name
+      <input name="name" required value="{{ f.name if f else '' }}"
+             class="mt-1 w-full border rounded px-2 py-1 text-sm">
+    </label>
+    <label class="text-sm">Body (HTML)
+      <textarea name="body_html" rows="8"
+                class="mt-1 w-full border rounded px-2 py-1 text-xs font-mono"
+                placeholder='&lt;div&gt;... &lt;a href="{unsubscribe_url}"&gt;Unsubscribe&lt;/a&gt;&lt;/div&gt;'>{{ f.body_html if f else '' }}</textarea>
+    </label>
+    <label class="text-sm">Body (plain text)
+      <textarea name="body_text" rows="5"
+                class="mt-1 w-full border rounded px-2 py-1 text-xs font-mono"
+                placeholder="... Unsubscribe: {unsubscribe_url}">{{ f.body_text if f else '' }}</textarea>
+    </label>
+    <p class="text-xs text-slate-500">
+      Use <code class="bg-slate-100 px-1 rounded">{unsubscribe_url}</code> where the per-recipient
+      unsubscribe link should go. Keeping a visible unsubscribe link is legally required for cold
+      email (CAN-SPAM).
+    </p>
+    <div class="flex items-center gap-2">
+      <button type="submit" class="rounded bg-slate-900 text-white text-sm px-3 py-1.5">Save</button>
+      {% if f %}
+      <a href="/settings/footers/{{ f.id }}/edit" class="text-sm text-slate-500 hover:underline">Reload preview</a>
+      {% endif %}
+    </div>
+  </form>
+
+  <div>
+    <div class="text-sm font-medium mb-2">Preview</div>
+    {% if preview is not none %}
+    <div class="border rounded p-3 bg-white">{{ preview | safe }}</div>
+    <p class="text-xs text-slate-400 mt-2">Rendered against a sample recipient; save to refresh.</p>
+    {% else %}
+    <p class="text-xs text-slate-400">Save to see the rendered preview.</p>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}

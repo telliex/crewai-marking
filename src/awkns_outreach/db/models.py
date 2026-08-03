@@ -254,6 +254,11 @@ class EmailTemplate(Base):
     subject: Mapped[str] = mapped_column(String, nullable=False)
     body: Mapped[str] = mapped_column(String, nullable=False)
     status: Mapped[str] = mapped_column(String, default="active")  # active | archived
+    # Which footer to append when this template is used: "default" (or NULL) →
+    # the is_default FooterTemplate, "none" → no footer, "<footer_template_id>"
+    # → that footer. Carried onto a sequence step's own `footer_choice` when the
+    # template is inserted into the step editor.
+    footer_choice: Mapped[Optional[str]] = mapped_column(String, nullable=True)
 
     # Real outgoing-email attachments (as opposed to inline body images):
     # list of {filename, stored_name, content_type, size}. `stored_name` is
@@ -262,6 +267,37 @@ class EmailTemplate(Base):
     attachments: Mapped[list[dict[str, Any]]] = mapped_column(
         JSONType, default=list, nullable=False
     )
+
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+
+class FooterTemplate(Base):
+    """A reusable email footer (brand block + unsubscribe link). Exactly one row
+    is the `is_default` footer (the Pounds Network block), which is immutable —
+    it can't be edited, archived, or deleted. Operators may add more footers.
+
+    A sequence step / EmailTemplate selects one via `footer_choice`
+    ("default" | "none" | "<footer_template_id>"). The `{unsubscribe_url}`
+    placeholder in `body_html` / `body_text` is replaced per-recipient at send
+    time — see compliance.footer_html / footer_text."""
+
+    __tablename__ = "footer_template"
+
+    id: Mapped[str] = mapped_column(String, primary_key=True, default=_uuid)
+    name: Mapped[str] = mapped_column(String, nullable=False)
+    body_html: Mapped[str] = mapped_column(String, nullable=False)
+    body_text: Mapped[str] = mapped_column(String, nullable=False)
+    # The seeded Pounds Network footer. Immutable; guards in the settings route
+    # reject any edit/archive/delete when true.
+    is_default: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, server_default=sa_false()
+    )
+    status: Mapped[str] = mapped_column(String, default="active", nullable=False)  # active | archived
 
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()

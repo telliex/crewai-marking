@@ -22,7 +22,12 @@ from typing import Any, Optional
 from sqlalchemy import func, select, update
 from sqlalchemy.orm import Session
 
-from awkns_outreach.compliance import can_send_legally, is_suppressed, suppress
+from awkns_outreach.compliance import (
+    can_send_legally,
+    is_suppressed,
+    resolve_footer,
+    suppress,
+)
 from awkns_outreach.db.models import Campaign, Event, Lead
 from awkns_outreach.identity import resolve_identity
 from awkns_outreach.send.mailer import send_outreach_email
@@ -42,6 +47,14 @@ def step_delay_minutes(step: dict) -> int:
     if "delay_minutes" in step:
         return step["delay_minutes"]
     return step.get("delay_days", 0) * 1440
+
+
+def step_footer_choice(step: dict) -> str:
+    """Which footer to append for this step: "default" (the is_default footer),
+    "none" (no footer), or a footer_template_id. Steps predating the field —
+    or built before it existed — fall back to "default" so their footer is
+    unchanged."""
+    return step.get("footer_choice") or "default"
 
 
 @dataclass
@@ -207,7 +220,10 @@ def process_campaign(
             if gap > 0:
                 time.sleep(gap / 1000.0)
 
-        res = send_outreach_email(lead, campaign, email, lead.step, steps, dry_run=dry_run)
+        footer = resolve_footer(session, step_footer_choice(steps[lead.step]))
+        res = send_outreach_email(
+            lead, campaign, email, lead.step, steps, dry_run=dry_run, footer=footer
+        )
 
         if res.ok:
             real_send_done = True

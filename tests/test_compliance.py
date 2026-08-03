@@ -4,16 +4,26 @@ import respx
 
 from awkns_outreach import compliance
 from awkns_outreach.compliance import (
+    DEFAULT_FOOTER_HTML,
+    DEFAULT_FOOTER_TEXT,
     can_send_legally,
     footer_html,
     footer_text,
     is_suppressed,
     list_unsubscribe_headers,
     make_unsub_token,
+    resolve_footer,
     suppress,
     verify_unsub_token,
 )
-from awkns_outreach.db.models import Campaign, Lead, Suppression
+from awkns_outreach.db.models import Campaign, FooterTemplate, Lead, Suppression
+
+
+def _default_footer() -> FooterTemplate:
+    return FooterTemplate(
+        name="Default", body_html=DEFAULT_FOOTER_HTML, body_text=DEFAULT_FOOTER_TEXT,
+        is_default=True,
+    )
 from awkns_outreach.identity import Identity
 
 _IDENT = Identity(
@@ -46,39 +56,58 @@ def test_list_unsubscribe_headers_one_click():
     assert h["List-Unsubscribe"].startswith("<http")
 
 
-def test_footer_text_has_hardcoded_brand_block_and_no_postal_address():
-    text = footer_text("a@b.com", _IDENT)
-    # Hardcoded Pounds Network brand block, independent of the identity.
+def test_default_footer_text_renders_brand_block_and_unsubscribe():
+    text = footer_text(_default_footer(), "a@b.com")
     assert "Pounds Network" in text
     assert "AI-Powered Marketing Campaigns" in text
     assert "Pounds.Network | gm@wing.studio | (425)628-4276 | Seattle, WA" in text
-    # Postal address is intentionally no longer shown in the footer.
-    assert "1 Test St, Taipei" not in text
-    # Unsubscribe stays (List-Unsubscribe header + link).
     assert "Unsubscribe" in text
-    # The env-driven sender/company line is no longer the footer heading.
-    assert "Steven Wu · Awkns" not in text
+    # {unsubscribe_url} is substituted with the real per-recipient link.
+    assert "{unsubscribe_url}" not in text
+    assert "/outreach/unsubscribe?token=" in text
 
 
-def test_footer_html_hardcoded_brand_heading_and_no_postal_address():
-    html = footer_html("a@b.com", _IDENT)
-    # Bold brand heading, hardcoded (not the identity's "Steven Wu · Awkns").
+def test_default_footer_html_renders_brand_heading_and_unsubscribe_link():
+    html = footer_html(_default_footer(), "a@b.com")
     assert '<div style="font-weight:600;color:#202124">Pounds Network</div>' in html
-    assert "Steven Wu · Awkns" not in html
-    # Muted tagline + contact line, verbatim from image 2.
     assert "AI-Powered Marketing Campaigns" in html
     assert "Pounds.Network | gm@wing.studio | (425)628-4276 | Seattle, WA" in html
-    # Postal address intentionally removed from the footer.
-    assert "1 Test St, Taipei" not in html
-    # Unsubscribe link stays, with no dangling " · " separator before it.
-    assert "Unsubscribe" in html
-    assert " · <a href" not in html
+    assert "{unsubscribe_url}" not in html
+    assert 'href="http' in html and "/outreach/unsubscribe?token=" in html
 
 
-def test_footer_html_no_address_omits_dangling_separator():
-    html = footer_html("a@b.com", _NO_ADDR)
-    assert "Unsubscribe" in html
-    assert " · <a href" not in html
+def test_resolve_footer_none_returns_none(db_session):
+    assert resolve_footer(db_session, "none") is None
+
+
+def test_resolve_footer_default_uses_default_row(db_session):
+    default = FooterTemplate(name="D", body_html="<b>D</b>", body_text="D", is_default=True)
+    db_session.add(default)
+    db_session.commit()
+    assert resolve_footer(db_session, "default").id == default.id
+    assert resolve_footer(db_session, None).id == default.id
+
+
+def test_resolve_footer_specific_id(db_session):
+    default = FooterTemplate(name="D", body_html="d", body_text="d", is_default=True)
+    other = FooterTemplate(name="Other", body_html="o", body_text="o")
+    db_session.add_all([default, other])
+    db_session.commit()
+    assert resolve_footer(db_session, other.id).id == other.id
+
+
+def test_resolve_footer_unknown_id_falls_back_to_default(db_session):
+    default = FooterTemplate(name="D", body_html="d", body_text="d", is_default=True)
+    db_session.add(default)
+    db_session.commit()
+    assert resolve_footer(db_session, "no-such-id").id == default.id
+
+
+def test_resolve_footer_synthesizes_default_when_no_row(db_session):
+    # No rows seeded (create_all doesn't run the seed migration): still usable.
+    footer = resolve_footer(db_session, "default")
+    assert footer is not None
+    assert "Pounds Network" in footer.body_html
 
 
 def test_legal_gate():

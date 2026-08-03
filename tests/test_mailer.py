@@ -44,11 +44,9 @@ def test_render_fills_placeholders():
     assert "<p" in r.html  # inbox-friendly paragraphs
 
 
-def test_footer_hidden_when_show_footer_false(monkeypatch):
-    from awkns_outreach.send import mailer
-    monkeypatch.setattr(mailer.settings, "outreach_show_footer", False)
+def test_footer_omitted_when_footer_is_none():
     r = render_step(_lead(angle="Your stories would animate beautifully."),
-                    _campaign(), 0, "k@toyota.co.jp", steps=_SEQUENCE)
+                    _campaign(), 0, "k@toyota.co.jp", steps=_SEQUENCE, footer=None)
     # Body still renders as normal...
     assert "Hi Kenji," in r.text
     assert "Your stories would animate beautifully." in r.text
@@ -57,6 +55,20 @@ def test_footer_hidden_when_show_footer_false(monkeypatch):
     assert "Unsubscribe" not in r.text
     assert "Pounds Network" not in r.html
     assert "Unsubscribe" not in r.html
+
+
+def test_footer_uses_the_given_footer_template():
+    from awkns_outreach.db.models import FooterTemplate
+    footer = FooterTemplate(
+        name="Custom", is_default=False,
+        body_html="<div>Custom footer · {unsubscribe_url}</div>",
+        body_text="Custom footer · {unsubscribe_url}",
+    )
+    r = render_step(_lead(), _campaign(), 0, "k@toyota.co.jp", steps=_SEQUENCE, footer=footer)
+    assert "Custom footer" in r.text and "Custom footer" in r.html
+    assert "Pounds Network" not in r.html  # not the default
+    assert "{unsubscribe_url}" not in r.html  # placeholder substituted
+    assert "/outreach/unsubscribe?token=" in r.html
 
 
 def test_angle_fallback_when_missing():

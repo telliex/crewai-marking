@@ -1,0 +1,15 @@
+{# Footer chooser reused by the template and sequence-step editors.
+   `current` is the stored footer_choice (NULL/"default"|"none"|"<id>").
+   `default_name` labels the immutable Default footer; `footers` are the active
+   non-default footers. `attrs` injects element attributes (id, hx-*). #}
+{% macro footer_select(field_name, current, default_name, footers, attrs="", cls="") %}
+<select name="{{ field_name }}" class="{{ cls }}" {{ attrs | safe }}>
+  <option value="default"{% if not current or current == 'default' %} selected{% endif %}>Default ({{ default_name }})</option>
+  {% for f in footers %}
+  {% if not f.is_default %}
+  <option value="{{ f.id }}"{% if current == f.id %} selected{% endif %}>{{ f.name }}</option>
+  {% endif %}
+  {% endfor %}
+  <option value="none"{% if current == 'none' %} selected{% endif %}>None (no footer)</option>
+</select>
+{% endmacro %}

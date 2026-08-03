@@ -1,0 +1,70 @@
+{% extends "base.html" %}
+{% block title %}Footers — Awkns Outreach{% endblock %}
+{% block content %}
+<div class="flex items-center justify-between mb-4">
+  <h1 class="text-lg font-semibold">Email footers</h1>
+  <a href="/settings/footers/new" class="rounded bg-slate-900 text-white text-sm px-3 py-1.5">+ New footer</a>
+</div>
+
+<p class="text-xs text-slate-500 mb-4">
+  Reusable email footers. Each email (template or sequence step) picks one — or <b>None</b> — via
+  its Footer dropdown. Use <code class="bg-slate-100 px-1 rounded">{unsubscribe_url}</code> in a
+  footer body to insert the per-recipient unsubscribe link. The <b>Default</b> footer can't be
+  edited.
+</p>
+
+<div class="overflow-x-auto rounded border bg-white">
+  <table class="w-full text-sm">
+    <thead class="bg-slate-100 text-slate-500 text-left">
+      <tr>
+        <th class="px-3 py-2">Name</th>
+        <th class="px-3 py-2">Preview</th>
+        <th class="px-3 py-2">Status</th>
+        <th class="px-3 py-2">Actions</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for row in rows %}
+      {% set f = row.f %}
+      <tr class="border-t align-top">
+        <td class="px-3 py-2">
+          {% if f.is_default %}
+          <span class="font-medium">{{ f.name }}</span>
+          <span class="ml-1 rounded px-1.5 py-0.5 text-[10px] bg-slate-200 text-slate-600">default · read-only</span>
+          {% else %}
+          <a href="/settings/footers/{{ f.id }}/edit" class="text-blue-700 hover:underline">{{ f.name }}</a>
+          {% endif %}
+        </td>
+        <td class="px-3 py-2">
+          <div class="border rounded p-2 bg-white max-w-md">{{ row.preview | safe }}</div>
+        </td>
+        <td class="px-3 py-2 text-slate-500">{{ f.status }}</td>
+        <td class="px-3 py-2">
+          {% if f.is_default %}
+          <span class="text-slate-400 text-xs">—</span>
+          {% else %}
+          <div class="flex items-center gap-2">
+            <a href="/settings/footers/{{ f.id }}/edit" class="text-blue-700 hover:underline">Edit</a>
+            <form method="post" action="/settings/footers/{{ f.id }}/edit" class="inline">
+              {% if f.status == 'archived' %}
+              <input type="hidden" name="action" value="unarchive">
+              <button type="submit" class="text-blue-700 hover:underline">Unarchive</button>
+              {% else %}
+              <input type="hidden" name="action" value="archive">
+              <button type="submit" class="text-amber-700 hover:underline">Archive</button>
+              {% endif %}
+            </form>
+            <form method="post" action="/settings/footers/{{ f.id }}/edit" class="inline"
+                  onsubmit="return confirm('Delete this footer? Emails using it fall back to the Default footer.');">
+              <input type="hidden" name="action" value="delete">
+              <button type="submit" class="text-red-700 hover:underline">Delete</button>
+            </form>
+          </div>
+          {% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}

@@ -1,5 +1,6 @@
 {% extends "base.html" %}
 {% from "_rich_editor.html" import rich_editor %}
+{% from "_footer_select.html" import footer_select %}
 {% block title %}{% if seq %}Edit {{ seq.name }}{% else %}New sequence{% endif %} — Awkns Outreach{% endblock %}
 {% block head_extra %}
 <link href="https://cdn.quilljs.com/1.3.7/quill.snow.css" rel="stylesheet">
@@ -59,6 +60,12 @@
         </select>
       </label>
       {% endif %}
+
+      <label class="text-xs text-slate-500 block mt-2">Footer
+        {{ footer_select("footer_choice", step.get('footer_choice'), default_footer_name, footers,
+            attrs='hx-post="/templates/preview-fragment" hx-trigger="change" hx-include="closest .step-block"',
+            cls="step-footer-choice mt-1 border rounded px-2 py-1 text-sm") }}
+      </label>
     </div>
 
     <div>
@@ -105,7 +112,7 @@
 <div class="mb-4 rounded border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600">
   Placeholders (filled per lead):
   {% for p in placeholders %}<code class="mx-0.5 rounded bg-white border px-1">{{ '{' ~ p ~ '}' }}</code>{% endfor %}
-  · The identity footer + unsubscribe line are added automatically.
+  · Each step appends its chosen footer (or None); manage footers under <a href="/settings/footers" class="underline">Settings → Footer</a>.
   · Manage reusable copy in the <a href="/templates" class="underline">template library</a>.
 </div>
 
@@ -219,6 +226,7 @@
     e.detail.parameters.subject = block.querySelector('[name=subject]').value;
     e.detail.parameters.body = block.querySelector('.tw-body-field').value;
     e.detail.parameters.attachments = block.querySelector('.tw-attachments-field').value;
+    e.detail.parameters.footer_choice = block.querySelector('.step-footer-choice').value;
   });
 
   function wireConnector(connector) {
@@ -241,6 +249,7 @@
       block.querySelector('[name=subject]'),
       block.querySelector('.tw-body-field'),
       block.querySelector('.tw-attachments-field'),
+      block.querySelector('.step-footer-choice'),
     ];
     triggerFields.forEach((el) => el.setAttribute('hx-target', '#' + previewId));
     htmx.process(block);
@@ -261,6 +270,7 @@
     twSyncAttachments(root);
     block.querySelector('[name=subject]').value = tpl.subject || '';
     block.querySelector('[name=source_template_id]').value = tpl.id || '';
+    block.querySelector('.step-footer-choice').value = tpl.footer_choice || 'default';
     setSourceHint(block, tpl.name);
     // Leave the picker showing this template — only a later edit clears it.
     setTimeout(() => { delete block.dataset.templateSync; }, 0);

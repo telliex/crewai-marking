@@ -15,7 +15,7 @@
     <button type="button" id="test-send-button"
             class="tw-test-send-button rounded bg-yellow-400 hover:bg-yellow-300 text-slate-900 text-sm font-medium px-4 py-2 whitespace-nowrap"
             hx-post="/templates/test-send-fragment"
-            hx-include="{{ test_send_include | default('#subject-field,#body-field,#attachments-field,#mailbox-field,#custom-recipients-field') }}"
+            hx-include="{{ test_send_include | default('#subject-field,#body-field,#attachments-field,#footer-field,#mailbox-field,#custom-recipients-field') }}"
             hx-target="closest .tw-test-send-widget" hx-swap="outerHTML">
       {% if selected_mailbox_id == "__custom__" %}Send Test Email{% else %}Send Test Email to Me{% endif %}
     </button>

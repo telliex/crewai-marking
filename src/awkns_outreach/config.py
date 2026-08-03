@@ -41,10 +41,6 @@ class Settings(BaseSettings):
     outreach_unsubscribe_mailto: str = Field(
         default="", alias="OUTREACH_UNSUBSCRIBE_MAILTO"
     )
-    # Temporary kill switch for the visible email footer (brand block +
-    # unsubscribe link). Set OUTREACH_SHOW_FOOTER=false to send without any
-    # footer; the List-Unsubscribe header is still added at send time.
-    outreach_show_footer: bool = Field(default=True, alias="OUTREACH_SHOW_FOOTER")
     # HMAC secret for signing unsubscribe tokens. MUST be set in production.
     outreach_unsubscribe_secret: str = Field(
         default="dev-insecure-secret", alias="OUTREACH_UNSUBSCRIBE_SECRET"

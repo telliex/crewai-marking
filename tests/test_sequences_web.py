@@ -91,6 +91,26 @@ def test_create_sequence_with_two_steps(client, session):
     assert seq.steps[1]["delay_minutes"] == 3  # tolerant parse of a real int
     assert seq.steps[1]["attachments"] == []
     assert seq.steps[1]["source_template_id"] is None
+    # No footer_choice sent → every step defaults to the default footer.
+    assert seq.steps[0]["footer_choice"] == "default"
+    assert seq.steps[1]["footer_choice"] == "default"
+
+
+def test_create_sequence_persists_per_step_footer_choice(client, session):
+    r = client.post("/sequences", auth=AUTH, follow_redirects=False, data={
+        "name": "Footers",
+        "step_key": ["a", "b"],
+        "delay_minutes": ["0", "0"],
+        "subject": ["s1", "s2"],
+        "body": ["b1", "b2"],
+        "attachments": ["[]", "[]"],
+        "source_template_id": ["", ""],
+        "footer_choice": ["none", "footer-xyz"],
+    })
+    assert r.status_code == 303
+    seq = session.query(MailSequence).one()
+    assert seq.steps[0]["footer_choice"] == "none"
+    assert seq.steps[1]["footer_choice"] == "footer-xyz"
 
 
 def test_create_sequence_sanitizes_quill_html_body(client, session):
