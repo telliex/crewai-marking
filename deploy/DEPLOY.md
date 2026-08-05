@@ -115,6 +115,15 @@ At minimum set: `APOLLO_API_KEY`, `RESEND_API_KEY`, `ANTHROPIC_API_KEY`,
 `OUTREACH_POSTAL_ADDRESS`, required for real sends), `APP_BASE_URL`, and
 `ADMIN_PASSWORD`.
 
+**Uploaded images/attachments** (footer/template images, email attachments) are
+written to `UPLOAD_DIR`. The systemd units set it to `/var/lib/awkns-outreach/uploads`
+via their `StateDirectory=awkns-outreach`, which systemd creates owned by the
+`awkns` service user — so it's writable, lives outside the git checkout, and
+survives redeploys. Do **not** point it inside `/opt/awkns-outreach`: that tree
+is owned by `ubuntu`, so the service user can't write there (symptom: image
+upload returns HTTP 500 "upload storage isn't writable"). Leave `UPLOAD_DIR`
+blank in `.env` unless you deliberately want a different path.
+
 ### 5. Database schema
 
 ```bash

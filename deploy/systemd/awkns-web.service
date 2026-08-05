@@ -7,6 +7,11 @@ Type=simple
 User=awkns
 WorkingDirectory=/opt/awkns-outreach
 EnvironmentFile=/opt/awkns-outreach/.env
+# systemd creates /var/lib/awkns-outreach owned by User=awkns (survives
+# redeploys, outside the git checkout). User-uploaded images/attachments live
+# there, not in the code tree — which the service user can't write to.
+StateDirectory=awkns-outreach
+Environment=UPLOAD_DIR=%S/awkns-outreach/uploads
 ExecStart=/opt/awkns-outreach/.venv/bin/uvicorn awkns_outreach.web.app:app --host 0.0.0.0 --port 8000
 Restart=on-failure
 RestartSec=5

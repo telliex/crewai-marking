@@ -9,10 +9,13 @@ Named `templates_lib` (not `templates`) to avoid clashing with Jinja2's
 from __future__ import annotations
 
 import json
+import logging
 import re
 import uuid
 from pathlib import Path
 from typing import Optional
+
+logger = logging.getLogger(__name__)
 
 import nh3
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
@@ -204,6 +207,23 @@ def _send_test_emails_to_custom_recipients(
     return "\n".join(lines)
 
 
+def _save_upload(name: str, data: bytes) -> None:
+    """Write an uploaded file to UPLOAD_DIR, turning any filesystem failure
+    (unwritable dir, read-only FS, disk full) into a clear 500 instead of a
+    bare unhandled error. The usual cause in production is UPLOAD_DIR not being
+    writable by the service user — see uploads.py / the systemd StateDirectory."""
+    try:
+        UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+        (UPLOAD_DIR / name).write_bytes(data)
+    except OSError as exc:
+        logger.exception("Upload storage write failed at %s", UPLOAD_DIR)
+        raise HTTPException(
+            500,
+            "Could not save the file — upload storage isn't writable on the "
+            "server. Ask the engineer to check UPLOAD_DIR permissions.",
+        ) from exc
+
+
 @router.post("/templates/upload-image")
 async def upload_template_image(file: UploadFile = File(...)):
     ext = _ALLOWED_IMAGE_TYPES.get(file.content_type)
@@ -212,9 +232,8 @@ async def upload_template_image(file: UploadFile = File(...)):
     data = await file.read()
     if len(data) > _MAX_IMAGE_BYTES:
         raise HTTPException(400, "Image too large (max 5MB).")
-    UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
     name = f"{uuid.uuid4().hex}{ext}"
-    (UPLOAD_DIR / name).write_bytes(data)
+    _save_upload(name, data)
     return {"url": f"{settings.app_base_url}/uploads/{name}"}
 
 
@@ -225,10 +244,9 @@ async def upload_template_attachment(file: UploadFile = File(...)):
     data = await file.read()
     if len(data) > _MAX_ATTACHMENT_BYTES:
         raise HTTPException(400, "Attachment too large (max 10MB).")
-    UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
     ext = "".join(Path(file.filename).suffixes)[-16:]  # keep it short & bounded
     stored_name = f"{uuid.uuid4().hex}{ext}"
-    (UPLOAD_DIR / stored_name).write_bytes(data)
+    _save_upload(stored_name, data)
     return {
         "filename": file.filename,
         "stored_name": stored_name,

@@ -7,6 +7,10 @@ Type=simple
 User=awkns
 WorkingDirectory=/opt/awkns-outreach
 EnvironmentFile=/opt/awkns-outreach/.env
+# Same upload store as the web service — the send loop reads attachment bytes
+# back off disk at send time. Both services run as awkns and share this dir.
+StateDirectory=awkns-outreach
+Environment=UPLOAD_DIR=%S/awkns-outreach/uploads
 ExecStart=/opt/awkns-outreach/.venv/bin/outreach cron --send --interval 1 --max 5 --poll-interval 5
 Restart=on-failure
 RestartSec=5

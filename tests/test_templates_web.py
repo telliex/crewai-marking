@@ -499,3 +499,30 @@ def test_status_invalid_action_and_noop(client, session):
     assert r2.status_code == 303  # no-op: already active, redirects without error
     session.refresh(t)
     assert t.status == "active"
+
+
+def test_upload_image_reports_storage_error_not_bare_500(client, monkeypatch, tmp_path):
+    # Point UPLOAD_DIR at a path that already exists as a FILE, so mkdir()
+    # raises OSError — the same failure mode as an unwritable dir on the server.
+    # The route should surface a clear storage error, not a bare 500.
+    blocker = tmp_path / "not-a-dir"
+    blocker.write_bytes(b"x")
+    monkeypatch.setattr(templates_lib_module, "UPLOAD_DIR", blocker)
+    r = client.post(
+        "/templates/upload-image", auth=AUTH,
+        files={"file": ("logo.png", b"\x89PNG\r\n\x1a\n", "image/png")},
+    )
+    assert r.status_code == 500
+    assert "storage" in r.json()["detail"].lower()
+
+
+def test_upload_dir_honors_env_override(monkeypatch, tmp_path):
+    import importlib
+    from awkns_outreach import uploads
+    monkeypatch.setenv("UPLOAD_DIR", str(tmp_path / "custom-uploads"))
+    importlib.reload(uploads)
+    try:
+        assert uploads.UPLOAD_DIR == tmp_path / "custom-uploads"
+    finally:
+        monkeypatch.delenv("UPLOAD_DIR", raising=False)
+        importlib.reload(uploads)  # restore module default for other tests
