@@ -1,0 +1,161 @@
+<script>
+// Minimal footer block builder. Holds the layout model in JS, renders the
+// canvas, keeps the hidden `layout` field in sync, and posts to the preview
+// endpoint on change. Drag-and-drop lights up when SortableJS is present.
+let twFbLayout = { width: 560, rows: [] };
+
+function twFbInit() {
+  const raw = document.getElementById('footer-layout-field').value;
+  try { if (raw) twFbLayout = JSON.parse(raw); } catch (e) {}
+  if (!twFbLayout.rows) twFbLayout.rows = [];
+  twFbRender();
+  twFbPreview();
+}
+
+function twFbSync() {
+  document.getElementById('footer-layout-field').value = JSON.stringify(twFbLayout);
+  twFbPreview();
+}
+
+function twFbAddRow(cols) {
+  const columns = [];
+  for (let i = 0; i < cols; i++) columns.push({ blocks: [] });
+  twFbLayout.rows.push({ columns });
+  twFbRender(); twFbSync();
+}
+
+function twFbAddBlock(r, c, type) {
+  const defaults = {
+    text: { type: 'text', html: 'New text · <a href="{unsubscribe_url}">Unsubscribe</a>', align: 'left' },
+    image: { type: 'image', src: '', alt: '', href: '', align: 'left', width: 120 },
+    button: { type: 'button', label: 'Button', href: 'https://', bg: '#0f172a', color: '#ffffff', align: 'left' },
+    divider: { type: 'divider' },
+  };
+  twFbLayout.rows[r].columns[c].blocks.push(structuredClone(defaults[type]));
+  twFbRender(); twFbSync();
+}
+
+function twFbRemoveBlock(r, c, b) {
+  twFbLayout.rows[r].columns[c].blocks.splice(b, 1);
+  twFbRender(); twFbSync();
+}
+function twFbRemoveRow(r) { twFbLayout.rows.splice(r, 1); twFbRender(); twFbSync(); }
+
+function twFbEdit(r, c, b, field, value) {
+  twFbLayout.rows[r].columns[c].blocks[b][field] = value;
+  twFbSync();
+}
+
+async function twFbUploadImage(input, r, c, b) {
+  if (!input.files || !input.files.length) return;
+  const form = new FormData(); form.append('file', input.files[0]);
+  try {
+    const res = await fetch('/templates/upload-image', { method: 'POST', body: form });
+    if (!res.ok) throw new Error((await res.json()).detail || 'Upload failed');
+    const { url } = await res.json();
+    twFbLayout.rows[r].columns[c].blocks[b].src = url;
+    twFbRender(); twFbSync();
+  } catch (e) { alert('Image upload failed: ' + e.message); }
+  finally { input.value = ''; }
+}
+
+function twFbEsc(s) { const d = document.createElement('div'); d.textContent = s == null ? '' : s; return d.innerHTML; }
+
+function twFbBlockControls(r, c, b, block) {
+  const t = block.type;
+  const rm = `<button type="button" onclick="twFbRemoveBlock(${r},${c},${b})" class="text-red-600 text-xs ml-1" title="Remove">✕</button>`;
+  const alignSel = (field) => `<select class="border rounded text-xs" onchange="twFbEdit(${r},${c},${b},'${field}',this.value)">
+      ${['left', 'center', 'right'].map(a => `<option ${block[field] === a ? 'selected' : ''}>${a}</option>`).join('')}
+    </select>`;
+  if (t === 'text') {
+    return `<textarea class="w-full border rounded text-xs p-1" rows="2"
+      oninput="twFbEdit(${r},${c},${b},'html',this.value)">${twFbEsc(block.html)}</textarea>
+      <div class="mt-1">${alignSel('align')}${rm}</div>`;
+  }
+  if (t === 'image') {
+    const preview = block.src ? `<img src="${twFbEsc(block.src)}" style="max-height:40px;display:block;margin-bottom:2px">` : '<span class="text-slate-400 text-xs">no image</span>';
+    return `${preview}
+      <input type="file" accept="image/*" class="text-xs w-full" onchange="twFbUploadImage(this,${r},${c},${b})">
+      <input class="w-full border rounded text-xs p-1 mt-1" placeholder="link (optional)" value="${twFbEsc(block.href)}"
+        oninput="twFbEdit(${r},${c},${b},'href',this.value)">
+      <div class="mt-1 flex items-center gap-1">${alignSel('align')}
+        <input class="border rounded text-xs p-1 w-16" type="number" placeholder="width" value="${block.width || ''}"
+          oninput="twFbEdit(${r},${c},${b},'width',parseInt(this.value)||0)">${rm}</div>`;
+  }
+  if (t === 'button') {
+    return `<input class="w-full border rounded text-xs p-1" placeholder="label" value="${twFbEsc(block.label)}"
+        oninput="twFbEdit(${r},${c},${b},'label',this.value)">
+      <input class="w-full border rounded text-xs p-1 mt-1" placeholder="href" value="${twFbEsc(block.href)}"
+        oninput="twFbEdit(${r},${c},${b},'href',this.value)">
+      <div class="mt-1 flex items-center gap-1">
+        <input type="color" value="${block.bg || '#0f172a'}" title="Background"
+          oninput="twFbEdit(${r},${c},${b},'bg',this.value)">
+        <input type="color" value="${block.color || '#ffffff'}" title="Text color"
+          oninput="twFbEdit(${r},${c},${b},'color',this.value)">${alignSel('align')}${rm}</div>`;
+  }
+  return `<span class="text-xs text-slate-500">divider</span>${rm}`;
+}
+
+function twFbRender() {
+  const el = document.getElementById('fb-canvas');
+  el.innerHTML = twFbLayout.rows.map((row, r) => `
+    <div class="border-b p-2">
+      <div class="flex justify-between text-xs text-slate-400 mb-1">
+        <span>Row ${r + 1}</span>
+        <button type="button" onclick="twFbRemoveRow(${r})" class="text-red-600">Remove row</button>
+      </div>
+      <div class="flex gap-2">
+        ${row.columns.map((col, c) => `
+          <div class="fb-col flex-1 border rounded p-1 min-h-[48px]" data-r="${r}" data-c="${c}">
+            ${col.blocks.map((block, b) => `
+              <div class="fb-block mb-1 flex items-start gap-1 border rounded p-1 bg-slate-50"
+                   data-b="${b}" data-block="${encodeURIComponent(JSON.stringify(block))}">
+                <span class="fb-drag cursor-move text-slate-400 select-none" title="Drag">⠿</span>
+                <div class="flex-1">${twFbBlockControls(r, c, b, block)}</div>
+              </div>`).join('')}
+            <div class="flex gap-1 flex-wrap pt-1">
+              ${['text', 'image', 'button', 'divider'].map(t =>
+                `<button type="button" class="text-[10px] rounded border px-1 hover:bg-slate-100"
+                   onclick="twFbAddBlock(${r},${c},'${t}')">+${t}</button>`).join('')}
+            </div>
+          </div>`).join('')}
+      </div>
+    </div>`).join('') || '<div class="text-slate-400 text-sm p-4 text-center">Add a row to start.</div>';
+  twFbAttachSortable();
+}
+
+function twFbAttachSortable() {
+  if (!window.Sortable) return;  // lights up once the CDN script is loaded
+  document.querySelectorAll('.fb-col').forEach((colEl) => {
+    Sortable.create(colEl, {
+      group: 'fb-blocks',       // same group ⇒ drag across columns/rows
+      draggable: '.fb-block',   // the "+block" palette stays put
+      handle: '.fb-drag',
+      animation: 120,
+      onEnd: twFbOnDrag,
+    });
+  });
+}
+
+function twFbOnDrag() {
+  // Rebuild each column's blocks from the DOM order (robust to cross-column
+  // moves), then re-render + sync.
+  document.querySelectorAll('.fb-col').forEach((colEl) => {
+    const r = +colEl.dataset.r, c = +colEl.dataset.c;
+    twFbLayout.rows[r].columns[c].blocks =
+      [...colEl.querySelectorAll('.fb-block')].map(el => JSON.parse(decodeURIComponent(el.dataset.block)));
+  });
+  twFbRender(); twFbSync();
+}
+
+async function twFbPreview() {
+  const target = document.getElementById('fb-preview');
+  if (!target) return;
+  const form = new FormData();
+  form.append('layout', JSON.stringify(twFbLayout));
+  try {
+    const res = await fetch('/settings/footers/preview-fragment', { method: 'POST', body: form });
+    target.innerHTML = await res.text();
+  } catch (e) {}
+}
+</script>

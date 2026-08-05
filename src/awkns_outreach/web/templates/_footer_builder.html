@@ -1,0 +1,12 @@
+{# Visual footer builder. Expects `layout_json` (a JSON string, or "") in
+   context and a form that will POST a `layout` field. Include
+   _footer_builder_script.html after this and call twFbInit(). #}
+{# tojson escapes < > & ' (but not "), so a single-quoted attribute is safe. #}
+<input type="hidden" name="layout" id="footer-layout-field" value='{{ layout_json or "" }}'>
+<div class="flex flex-wrap gap-2 mb-2 text-xs">
+  <button type="button" onclick="twFbAddRow(1)" class="rounded border px-2 py-1 hover:bg-slate-100">+ Row (1 col)</button>
+  <button type="button" onclick="twFbAddRow(2)" class="rounded border px-2 py-1 hover:bg-slate-100">+ Row (2 cols)</button>
+  <button type="button" onclick="twFbAddRow(3)" class="rounded border px-2 py-1 hover:bg-slate-100">+ Row (3 cols)</button>
+</div>
+<div id="fb-canvas" class="border rounded bg-white mx-auto" style="max-width:560px;min-height:120px"></div>
+<p class="text-xs text-slate-400 mt-1">Drag ⠿ to reorder or move blocks between columns. Plain-text version is generated automatically.</p>
