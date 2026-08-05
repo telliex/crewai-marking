@@ -298,6 +298,10 @@ class FooterTemplate(Base):
         Boolean, nullable=False, server_default=sa_false()
     )
     status: Mapped[str] = mapped_column(String, default="active", nullable=False)  # active | archived
+    # Structured block layout (visual builder source of truth). NULL for legacy
+    # footers authored with the raw-HTML editor. body_html/body_text are
+    # compiled from this on save; the send path only reads those two.
+    layout: Mapped[Optional[dict]] = mapped_column(JSONType, nullable=True)
 
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()

@@ -115,3 +115,13 @@ def test_delete_custom_footer(client, session):
     assert r2.status_code == 303
     session.expunge_all()
     assert session.get(FooterTemplate, f.id) is None
+
+
+def test_footer_layout_column_persists(session):
+    from awkns_outreach.db.models import FooterTemplate
+    f = FooterTemplate(name="L", body_html="x", body_text="x", is_default=False,
+                       layout={"rows": [{"columns": [{"blocks": []}]}]})
+    session.add(f)
+    session.commit()
+    session.refresh(f)
+    assert f.layout == {"rows": [{"columns": [{"blocks": []}]}]}
