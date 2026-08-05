@@ -125,3 +125,40 @@ def test_footer_layout_column_persists(session):
     session.commit()
     session.refresh(f)
     assert f.layout == {"rows": [{"columns": [{"blocks": []}]}]}
+
+
+def test_create_footer_from_layout_compiles_body(client, session):
+    import json
+    from awkns_outreach.db.models import FooterTemplate
+    layout = {"rows": [{"columns": [
+        {"blocks": [{"type": "image", "src": "http://x/a.png", "alt": "A"}]},
+        {"blocks": [{"type": "image", "src": "http://x/b.png", "alt": "B"}]},
+    ]}]}
+    r = client.post("/settings/footers", auth=AUTH, follow_redirects=False, data={
+        "name": "Built", "layout": json.dumps(layout),
+    })
+    assert r.status_code == 303
+    f = session.query(FooterTemplate).filter_by(name="Built").one()
+    assert f.layout == layout
+    assert f.body_html.count("<td") == 2
+
+
+def test_footer_preview_fragment_renders_layout(client):
+    import json
+    layout = {"rows": [{"columns": [{"blocks": [
+        {"type": "button", "label": "Go", "href": "http://x"}]}]}]}
+    r = client.post("/settings/footers/preview-fragment", auth=AUTH,
+                    data={"layout": json.dumps(layout)})
+    assert r.status_code == 200
+    assert ">Go</a>" in r.text
+
+
+def test_create_footer_warns_when_no_unsubscribe(client, session):
+    import json
+    layout = {"rows": [{"columns": [{"blocks": [
+        {"type": "text", "html": "No link here"}]}]}]}
+    r = client.post("/settings/footers", auth=AUTH, follow_redirects=False, data={
+        "name": "NoUnsub", "layout": json.dumps(layout),
+    })
+    assert r.status_code == 303
+    assert "unsubscribe" in r.headers["location"].lower()
