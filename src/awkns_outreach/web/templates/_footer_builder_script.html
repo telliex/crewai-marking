@@ -148,14 +148,22 @@ function twFbOnDrag() {
   twFbRender(); twFbSync();
 }
 
+// Monotonic token so only the LATEST preview response is applied. Preview
+// requests fire on every change and can resolve out of order (e.g. the
+// pre-upload request for a just-added image block resolving after the
+// post-upload one), which would otherwise clobber the fresh preview with a
+// stale one — making an uploaded image disappear until the next change.
+let _twFbPreviewSeq = 0;
 async function twFbPreview() {
   const target = document.getElementById('fb-preview');
   if (!target) return;
+  const seq = ++_twFbPreviewSeq;
   const form = new FormData();
   form.append('layout', JSON.stringify(twFbLayout));
   try {
     const res = await fetch('/settings/footers/preview-fragment', { method: 'POST', body: form });
-    target.innerHTML = await res.text();
+    const text = await res.text();
+    if (seq === _twFbPreviewSeq) target.innerHTML = text;  // ignore stale responses
   } catch (e) {}
 }
 </script>
