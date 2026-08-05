@@ -6,10 +6,38 @@
 // view flag, and the body-sync callback) lives on `rootEl._tw` — nothing is
 // stored in module-level globals — so multiple editors can coexist safely.
 
+// Register a block-align attributor that renders as an inline `text-align`
+// style (email clients honor text-align; they ignore Quill's default class-
+// based align and CSS float). Applying it to an image's paragraph positions
+// the image left/right. Whitelisting 'align' as a Quill format (see
+// twInitEditor) makes it survive load (dangerouslyPasteHTML) and re-save.
+// Guarded so multiple editor instances / includes register only once.
+if (window.Quill && !window._twAlignStyleRegistered) {
+  const StyleAttributor = Quill.import('parchment').Attributor.Style;
+  const AlignStyle = new StyleAttributor('align', 'text-align', {
+    scope: Quill.import('parchment').Scope.BLOCK,
+    whitelist: ['left', 'right', 'center', 'justify'],
+  });
+  Quill.register(AlignStyle, true);
+  window._twAlignStyleRegistered = true;
+}
+
 function twEscapeHtml(s) {
   const d = document.createElement('div');
   d.textContent = s;
   return d.innerHTML;
+}
+
+function twAlignImage(btn, dir) {
+  // Align the paragraph holding the current selection left/right, rendered as
+  // an inline `text-align` style. Positions an image (alone on its line) to the
+  // left or right. No-op when nothing is selected (nothing to align yet).
+  const root = btn.closest('.tw-editor');
+  const quill = root._tw.quill;
+  const range = quill.getSelection(true);
+  if (!range) return;
+  quill.format('align', dir, 'user');
+  root._tw.syncBody();
 }
 
 function twSetEditorBody(quill, rawBody) {
@@ -34,7 +62,7 @@ function twInitEditor(rootEl) {
   const quill = new Quill(rootEl.querySelector('.tw-quill-editor'), {
     theme: 'snow',
     modules: { toolbar: rootEl.querySelector('.tw-quill-toolbar') },
-    formats: ['bold', 'italic', 'underline', 'blockquote', 'list', 'indent', 'link', 'image'],
+    formats: ['bold', 'italic', 'underline', 'blockquote', 'list', 'indent', 'link', 'image', 'align'],
     placeholder: 'Hi {first_name},\n\n{angle}\n\n{sender_name}',
   });
   rootEl._tw = { quill, attachments: [], codeViewOn: false };
