@@ -15,7 +15,11 @@ from sqlalchemy.orm import Session
 
 from awkns_outreach.apollo.client import domain_from_website
 from awkns_outreach.apollo.enrich import enrich_campaign
-from awkns_outreach.apollo.seed import SEED_FIELDS, parse_seed_companies
+from awkns_outreach.apollo.seed import (
+    SEED_FIELDS,
+    duplicate_email_problems,
+    parse_seed_companies,
+)
 from awkns_outreach.db.models import Campaign, Lead, Mailbox, Suppression, Task
 from awkns_outreach.web.deps import get_db, require_admin, templates
 from awkns_outreach.web.stats import campaign_stats
@@ -141,19 +145,27 @@ def create_campaign(
     seed_file: Optional[UploadFile] = File(None),
     db: Session = Depends(get_db),
 ):
+    problems: list[str] = []
+    seed_companies: list[dict] = []
     try:
         seed_companies = _read_seed_input(seed_file, seed_text)
     except ValueError as exc:
+        problems.append(f"Seed import failed: {exc}")
+    else:
+        problems.extend(duplicate_email_problems(seed_companies))
+
+    if problems:
         return templates.TemplateResponse(
             request, "new_campaign.html",
             {
-                "msg": f"Seed import failed: {exc}",
+                "problems": problems,
                 "name": name,
                 "titles": titles,
                 "angle_prompt": angle_prompt,
                 "seed_text": seed_text,
             },
         )
+
     c = Campaign(
         name=name.strip(),
         target_titles=_split_lines(titles),

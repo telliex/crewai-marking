@@ -1,0 +1,28 @@
+{# Interrupting popup for blocked seed imports. Renders only when `problems`
+   (a list[str]) is non-empty; auto-opens on load. Included by new_campaign.html
+   and seed_companies_edit.html. #}
+{% if problems %}
+<dialog id="import-problems" class="rounded border p-0 max-w-md w-full">
+  <div class="p-4 space-y-3">
+    <h2 class="text-sm font-semibold text-red-700">Import stopped — fix these first</h2>
+    <ul class="list-disc pl-5 text-sm text-slate-700 space-y-1">
+      {% for p in problems %}<li>{{ p }}</li>{% endfor %}
+    </ul>
+    <p class="text-xs text-slate-500">
+      Uploaded files can’t be restored automatically — re-select the file after
+      fixing. Pasted text is kept.
+    </p>
+    <div class="flex justify-end">
+      <button type="button"
+              onclick="document.getElementById('import-problems').close()"
+              class="rounded bg-slate-900 text-white text-xs px-3 py-1.5">Close and fix</button>
+    </div>
+  </div>
+</dialog>
+<script>
+  (function () {
+    var d = document.getElementById("import-problems");
+    if (d && typeof d.showModal === "function") d.showModal();
+  })();
+</script>
+{% endif %}

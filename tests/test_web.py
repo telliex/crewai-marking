@@ -997,3 +997,22 @@ def test_campaign_detail_tier_filter_and_counts(client, session, monkeypatch):
     assert "d@x.com" in unclassified_page.text and "e@x.com" in unclassified_page.text
     for email in ("a@x.com", "b@x.com", "c1@x.com"):
         assert email not in unclassified_page.text
+
+
+def test_create_campaign_blocks_on_duplicate_email(client, session, monkeypatch):
+    monkeypatch.setattr(settings, "admin_password", "secret")
+    auth = ("admin", "secret")
+    csv = (
+        "name,email\n"
+        "Shan Hair,shan@shanhair.com\n"
+        "Shan Hair,shan@shanhair.com\n"
+    )
+    r = client.post("/campaigns", auth=auth, data={
+        "name": "Beauty", "titles": "", "seed_text": csv, "angle_prompt": "",
+    }, follow_redirects=False)
+
+    assert r.status_code == 200  # re-rendered, not a redirect
+    assert session.query(Campaign).count() == 0  # nothing created
+    assert "shan@shanhair.com" in r.text  # the offending email is shown
+    assert 'id="import-problems"' in r.text  # the popup is present
+    assert "Beauty" in r.text  # name preserved
