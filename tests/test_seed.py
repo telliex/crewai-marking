@@ -96,3 +96,44 @@ def test_parse_multiple_bad_rows_lists_every_row_in_one_error():
     assert "row 1: missing required field 'name'" in message
     assert "row 3: missing required field 'name'" in message
     assert "row 2" not in message  # the valid row must not be reported
+
+
+from awkns_outreach.apollo.seed import duplicate_email_problems
+
+
+def test_duplicate_email_problems_none_when_all_unique():
+    rows = [{"name": "A", "email": "a@x.com"}, {"name": "B", "email": "b@x.com"}]
+    assert duplicate_email_problems(rows) == []
+
+
+def test_duplicate_email_problems_flags_repeated_email():
+    rows = [
+        {"name": "A", "email": "shan@shanhair.com"},
+        {"name": "B", "email": "shan@shanhair.com"},
+    ]
+    assert duplicate_email_problems(rows) == [
+        "Duplicate email used by 2 rows: shan@shanhair.com"
+    ]
+
+
+def test_duplicate_email_problems_normalizes_case_and_whitespace():
+    rows = [{"name": "A", "email": "A@X.com "}, {"name": "B", "email": "a@x.com"}]
+    assert duplicate_email_problems(rows) == [
+        "Duplicate email used by 2 rows: a@x.com"
+    ]
+
+
+def test_duplicate_email_problems_ignores_rows_without_email():
+    rows = [{"name": "A"}, {"name": "B", "email": "b@x.com"}, {"name": "C"}]
+    assert duplicate_email_problems(rows) == []
+
+
+def test_duplicate_email_problems_reports_each_group_sorted():
+    rows = [
+        {"email": "b@x.com"}, {"email": "b@x.com"},
+        {"email": "a@x.com"}, {"email": "a@x.com"}, {"email": "a@x.com"},
+    ]
+    assert duplicate_email_problems(rows) == [
+        "Duplicate email used by 3 rows: a@x.com",
+        "Duplicate email used by 2 rows: b@x.com",
+    ]

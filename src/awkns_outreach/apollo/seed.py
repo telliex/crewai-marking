@@ -111,3 +111,24 @@ def parse_seed_companies(raw: str, filename: Optional[str] = None) -> list[dict[
     if errors:
         raise ValueError("; ".join(errors))
     return out
+
+
+def duplicate_email_problems(rows: list[dict[str, str]]) -> list[str]:
+    """One problem string per email used by 2+ rows; [] when none.
+
+    Emails are normalized (strip().lower()) exactly like
+    convert_seed_companies_to_leads and the Lead insert, so what we flag here is
+    precisely what would later collide on UniqueConstraint(campaign_id, email).
+    Rows without an email are ignored — a missing email is allowed at seed stage
+    (Apollo may fill it in later).
+    """
+    from collections import Counter
+
+    counts = Counter(
+        r["email"].strip().lower() for r in rows if r.get("email")
+    )
+    return [
+        f"Duplicate email used by {n} rows: {email}"
+        for email, n in sorted(counts.items())
+        if n > 1
+    ]
