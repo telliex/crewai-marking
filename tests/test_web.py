@@ -1016,3 +1016,58 @@ def test_create_campaign_blocks_on_duplicate_email(client, session, monkeypatch)
     assert "shan@shanhair.com" in r.text  # the offending email is shown
     assert 'id="import-problems"' in r.text  # the popup is present
     assert "Beauty" in r.text  # name preserved
+
+
+def test_import_companies_blocks_on_duplicate_email(client, session, monkeypatch):
+    monkeypatch.setattr(settings, "admin_password", "secret")
+    auth = ("admin", "secret")
+    c = Campaign(name="c", target_titles=[], seed_companies=[])
+    session.add(c)
+    session.commit()
+
+    csv = "name,email\nA,dup@x.com\nB,dup@x.com\n"
+    r = client.post(f"/campaigns/{c.id}/companies", auth=auth, data={
+        "action": "import", "import_mode": "replace", "seed_text": csv,
+    }, follow_redirects=False)
+
+    assert r.status_code == 200  # re-rendered, not a redirect
+    assert 'id="import-problems"' in r.text
+    assert "dup@x.com" in r.text
+    session.refresh(c)
+    assert c.seed_companies == []  # unchanged
+
+
+def test_import_companies_append_detects_collision_with_existing(client, session, monkeypatch):
+    monkeypatch.setattr(settings, "admin_password", "secret")
+    auth = ("admin", "secret")
+    c = Campaign(name="c", target_titles=[],
+                 seed_companies=[{"name": "A", "email": "dup@x.com"}])
+    session.add(c)
+    session.commit()
+
+    csv = "name,email\nB,dup@x.com\n"
+    r = client.post(f"/campaigns/{c.id}/companies", auth=auth, data={
+        "action": "import", "import_mode": "append", "seed_text": csv,
+    }, follow_redirects=False)
+
+    assert r.status_code == 200
+    assert "dup@x.com" in r.text
+    session.refresh(c)
+    assert c.seed_companies == [{"name": "A", "email": "dup@x.com"}]  # unchanged
+
+
+def test_import_companies_clean_replace_still_saves(client, session, monkeypatch):
+    monkeypatch.setattr(settings, "admin_password", "secret")
+    auth = ("admin", "secret")
+    c = Campaign(name="c", target_titles=[], seed_companies=[])
+    session.add(c)
+    session.commit()
+
+    csv = "name,email\nA,a@x.com\nB,b@x.com\n"
+    r = client.post(f"/campaigns/{c.id}/companies", auth=auth, data={
+        "action": "import", "import_mode": "replace", "seed_text": csv,
+    }, follow_redirects=False)
+
+    assert r.status_code == 303  # saved + redirect, unchanged happy path
+    session.refresh(c)
+    assert len(c.seed_companies) == 2

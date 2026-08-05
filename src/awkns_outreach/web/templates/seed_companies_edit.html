@@ -17,6 +17,7 @@
 {% endmacro %}
 
 {% block content %}
+{% include "_import_problems_dialog.html" %}
 <div class="mb-4">
   <a href="/campaigns/{{ c.id }}" class="text-xs text-slate-500 hover:underline">&larr; {{ c.name }}</a>
   <h1 class="text-lg font-semibold">Seed companies <span class="text-slate-400 text-sm font-normal">({{ companies|length }})</span></h1>

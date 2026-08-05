@@ -501,6 +501,7 @@ def _rows_from_form(values: dict[str, list[str]]) -> list[dict]:
 @router.post("/campaigns/{campaign_id}/companies")
 def save_companies(
     campaign_id: str,
+    request: Request,
     action: str = Form("save"),
     import_mode: str = Form("replace"),
     seed_text: str = Form(""),
@@ -521,17 +522,35 @@ def save_companies(
         c.seed_companies = []
         msg = "Seed companies cleared."
     elif action == "import":
+        problems: list[str] = []
+        imported: list[dict] = []
         try:
             imported = _read_seed_input(seed_file, seed_text)
         except ValueError as exc:
-            return RedirectResponse(
-                f"/campaigns/{c.id}/companies?msg=Import failed: {exc}", status_code=303
-            )
-        if import_mode == "append":
-            c.seed_companies = (c.seed_companies or []) + imported
-            msg = f"Appended {len(imported)} companies (total {len(c.seed_companies)})."
+            problems.append(f"Import failed: {exc}")
         else:
-            c.seed_companies = imported
+            final_rows = (
+                (c.seed_companies or []) + imported
+                if import_mode == "append"
+                else imported
+            )
+            problems.extend(duplicate_email_problems(final_rows))
+
+        if problems:
+            return templates.TemplateResponse(
+                request, "seed_companies_edit.html",
+                {
+                    "c": c,
+                    "companies": c.seed_companies or [],
+                    "fields": SEED_FIELDS,
+                    "problems": problems,
+                },
+            )
+
+        c.seed_companies = final_rows
+        if import_mode == "append":
+            msg = f"Appended {len(imported)} companies (total {len(final_rows)})."
+        else:
             msg = f"Imported {len(imported)} companies (replaced)."
     else:  # save row edits
         rows = _rows_from_form({
