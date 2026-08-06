@@ -30,6 +30,7 @@ def run_all_campaigns(
             max_this_run=max_this_run, gap_ms=gap_ms, now=now,
             ignore_business_hours=task.ignore_business_hours,
             ignore_workdays=task.ignore_workdays,
+            identity_snapshot=task.identity_snapshot,
         )
         results.append((task.campaign, summary))
     return results

@@ -109,7 +109,7 @@ def _lead(session, c, **kw):
 
 def _mock_ok(monkeypatch):
     monkeypatch.setattr(engine, "send_outreach_email",
-                        lambda l, c, e, s, steps, dry_run, footer=None: SendResult(ok=True, id=f"msg-{s}", subject="subj"))
+                        lambda l, c, e, s, steps, dry_run, footer=None, identity=None: SendResult(ok=True, id=f"msg-{s}", subject="subj"))
 
 
 NOW = datetime(2026, 7, 6, 2, 0, tzinfo=UTC)  # Monday, business hours in Taipei
@@ -217,7 +217,7 @@ def test_legal_gate_blocks_real_send(db_session, monkeypatch):
 
 def test_retry_cap_parks_lead_as_failed(db_session, monkeypatch):
     monkeypatch.setattr(engine, "send_outreach_email",
-                        lambda l, c, e, s, steps, dry_run, footer=None: SendResult(ok=False, error="bad address", subject="x"))
+                        lambda l, c, e, s, steps, dry_run, footer=None, identity=None: SendResult(ok=False, error="bad address", subject="x"))
     c = _campaign(db_session)
     lead = _lead(db_session, c)
     for _ in range(engine.MAX_SEND_ERRORS):
@@ -324,7 +324,7 @@ def test_tier_routing_uses_that_tiers_own_steps(db_session, monkeypatch):
     a Tier A lead must get Tier A's steps, not Tier B's."""
     sent_subjects = []
 
-    def _capture(l, c, e, s, steps, dry_run, footer=None):
+    def _capture(l, c, e, s, steps, dry_run, footer=None, identity=None):
         sent_subjects.append(steps[s]["subject"])
         return SendResult(ok=True, id=f"msg-{s}", subject=steps[s]["subject"])
 

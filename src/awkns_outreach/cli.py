@@ -22,6 +22,22 @@ from awkns_outreach.db.session import session_scope
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 app = typer.Typer(add_completion=False, help="Awkns cold-outreach funnel.")
 
+log = logging.getLogger(__name__)
+
+
+@app.callback()
+def _apply_config() -> None:
+    """Runs before every command: push DB variable overrides into settings +
+    os.environ so the CLI/cron path honors values saved on the Variables page.
+    Never abort a command if the table isn't migrated yet — fall back to .env."""
+    from awkns_outreach.config_store import apply_overrides
+
+    try:
+        with session_scope() as s:
+            apply_overrides(s)
+    except Exception:
+        log.warning("apply_overrides failed; using .env values", exc_info=True)
+
 
 def _get(session, campaign_id: str) -> Campaign:
     c = session.get(Campaign, campaign_id)
@@ -105,7 +121,8 @@ def run(
         summary = process_campaign(s, c, task.steps_by_tier, dry_run=not send,
                                    max_this_run=max_this_run,
                                    ignore_business_hours=ignore_business_hours,
-                                   ignore_workdays=ignore_workdays)
+                                   ignore_workdays=ignore_workdays,
+                                   identity_snapshot=task.identity_snapshot)
     if summary.blocked:
         typer.secho(f"BLOCKED: {summary.blocked}", fg="red")
         raise typer.Exit(1)

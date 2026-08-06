@@ -343,6 +343,23 @@ class MailSequence(Base):
     )
 
 
+class AppSetting(Base):
+    """Runtime override for a global config variable (see config_store.REGISTRY).
+
+    One row per overridden variable; `key` is the env-var name (e.g.
+    "OUTREACH_FROM"). Absence of a row means "use the .env/default baseline".
+    config_store.apply_overrides() reads this table and pushes effective values
+    into the live Settings singleton + os.environ at startup and after saves."""
+
+    __tablename__ = "app_setting"
+
+    key: Mapped[str] = mapped_column(String, primary_key=True)
+    value: Mapped[str] = mapped_column(String, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+
 class Task(Base):
     """A send campaign: picks one `Campaign`, assigns a `MailSequence` per
     lead tier (`sequences` = {"A": seq_id, "B": seq_id, "C": seq_id}, partial
@@ -404,6 +421,14 @@ class Task(Base):
     # content (engine.py's empty-steps guard makes process_campaign a no-op).
     steps_by_tier: Mapped[dict[str, list[dict[str, Any]]]] = mapped_column(
         JSONType, default=dict, nullable=False
+    )
+    # Frozen sender identity, snapshotted from the global settings at start_task
+    # (same moment content is frozen). The send path uses this so changing a
+    # sender-identity variable mid-run doesn't retroactively alter an already-
+    # running task — the new value only applies to tasks started afterwards.
+    # NULL for legacy tasks / when not running → send path re-resolves live.
+    identity_snapshot: Mapped[Optional[dict[str, Any]]] = mapped_column(
+        JSONType, nullable=True
     )
 
     created_at: Mapped[datetime] = mapped_column(

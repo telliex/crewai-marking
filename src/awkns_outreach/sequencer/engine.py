@@ -29,7 +29,7 @@ from awkns_outreach.compliance import (
     suppress,
 )
 from awkns_outreach.db.models import Campaign, Event, Lead
-from awkns_outreach.identity import resolve_identity
+from awkns_outreach.identity import Identity, resolve_identity
 from awkns_outreach.send.mailer import send_outreach_email
 from awkns_outreach.sequencer.limits import SEND, in_send_window, warmup_cap
 
@@ -87,12 +87,21 @@ def process_campaign(
     gap_ms: Optional[int] = None,
     ignore_business_hours: bool = False,
     ignore_workdays: bool = False,
+    identity_snapshot: Optional[dict[str, Any]] = None,
     now: Optional[datetime] = None,
 ) -> RunSummary:
     now = now or _utcnow()
     max_this_run = max(0, max_this_run)
     steps_by_tier = steps_by_tier or {}
     summary = RunSummary(dry_run=dry_run)
+
+    # Prefer the identity frozen onto the running Task at start; fall back to a
+    # live resolve for legacy tasks (snapshot is NULL) so behavior is unchanged.
+    ident = (
+        Identity(**identity_snapshot)
+        if identity_snapshot
+        else resolve_identity(campaign.sender_identity)
+    )
 
     if not any(steps_by_tier.values()):
         summary.blocked = "no steps"
@@ -104,7 +113,7 @@ def process_campaign(
         if campaign.status != "active":
             summary.blocked = f"campaign is {campaign.status}"
             return summary
-        ok, reason = can_send_legally(resolve_identity(campaign.sender_identity))
+        ok, reason = can_send_legally(ident)
         if not ok:
             summary.blocked = reason
             return summary
@@ -222,7 +231,8 @@ def process_campaign(
 
         footer = resolve_footer(session, step_footer_choice(steps[lead.step]))
         res = send_outreach_email(
-            lead, campaign, email, lead.step, steps, dry_run=dry_run, footer=footer
+            lead, campaign, email, lead.step, steps, dry_run=dry_run,
+            footer=footer, identity=ident,
         )
 
         if res.ok:

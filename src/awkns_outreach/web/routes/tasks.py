@@ -304,6 +304,7 @@ def run_task(
         db, task.campaign, task.steps_by_tier, dry_run=dry, max_this_run=max_this_run, gap_ms=0,
         ignore_business_hours=ignore_business_hours,
         ignore_workdays=ignore_workdays,
+        identity_snapshot=task.identity_snapshot,
     )
     mode = "DRY-RUN" if dry else "SENT"
     if s.blocked:

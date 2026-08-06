@@ -7,9 +7,14 @@ Resend webhook) and the HTTP-Basic-gated admin dashboard. Run with:
 """
 from __future__ import annotations
 
+import logging
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 
+from awkns_outreach.config_store import apply_overrides
+from awkns_outreach.db.session import session_scope
 from awkns_outreach.uploads import UPLOAD_DIR
 from awkns_outreach.web.routes import (
     admin,
@@ -19,11 +24,27 @@ from awkns_outreach.web.routes import (
     settings,
     tasks,
     templates_lib,
+    variables,
 )
+
+log = logging.getLogger(__name__)
+
+
+@asynccontextmanager
+async def _lifespan(app: FastAPI):
+    # Push DB-backed variable overrides into settings + os.environ so a restart
+    # still respects values saved on the Variables page. Never block startup if
+    # the table isn't migrated yet — fall back to .env.
+    try:
+        with session_scope() as db:
+            apply_overrides(db)
+    except Exception:  # pragma: no cover - defensive
+        log.warning("apply_overrides failed at startup; using .env values", exc_info=True)
+    yield
 
 
 def create_app() -> FastAPI:
-    app = FastAPI(title="Awkns Outreach", docs_url="/docs")
+    app = FastAPI(title="Awkns Outreach", docs_url="/docs", lifespan=_lifespan)
     app.include_router(public.router)
     app.include_router(admin.router)
     app.include_router(mailboxes.router)
@@ -31,6 +52,7 @@ def create_app() -> FastAPI:
     app.include_router(sequences.router)
     app.include_router(tasks.router)
     app.include_router(settings.router)
+    app.include_router(variables.router)
 
     UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
     app.mount("/uploads", StaticFiles(directory=UPLOAD_DIR), name="uploads")

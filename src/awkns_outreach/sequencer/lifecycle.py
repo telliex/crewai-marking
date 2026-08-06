@@ -11,6 +11,7 @@ steps per tier, resetting/parking lead cursors, mirroring campaign.status).
 """
 from __future__ import annotations
 
+import dataclasses
 import logging
 from datetime import datetime
 from typing import Optional
@@ -19,6 +20,7 @@ from sqlalchemy import func, select, update
 from sqlalchemy.orm import Session
 
 from awkns_outreach.db.models import Lead, MailSequence, Task
+from awkns_outreach.identity import resolve_identity
 
 log = logging.getLogger("awkns_outreach.sequencer.lifecycle")
 
@@ -115,6 +117,12 @@ def start_task(
         tier: [dict(step) for step in db.get(MailSequence, seq_id).steps]
         for tier, seq_id in task.sequences.items()
     }
+    # Freeze the sender identity at start, alongside the content snapshot, so a
+    # later change to a sender-identity variable doesn't retroactively alter
+    # this running task. The send path reads this instead of re-resolving live.
+    task.identity_snapshot = dataclasses.asdict(
+        resolve_identity(campaign.sender_identity)
+    )
 
     effective_tier = func.coalesce(Lead.tier, "B")
 
@@ -185,6 +193,7 @@ def stop_task(db: Session, task: Task) -> tuple[bool, str]:
     # resurrect the send: engine.py's empty-steps guard makes
     # process_campaign no-op instead of resending stale content.
     task.steps_by_tier = {}
+    task.identity_snapshot = None  # re-frozen at the next start
     task.status = "stopped"
     db.commit()
     return True, "Task stopped."

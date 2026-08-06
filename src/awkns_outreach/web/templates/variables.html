@@ -1,0 +1,106 @@
+{% extends "base.html" %}
+{% import "_buttons.html" as btn %}
+{% block title %}Variables — Awkns Outreach{% endblock %}
+{% block content %}
+<div class="flex items-center justify-between mb-4">
+  <h1 class="text-lg font-semibold">Variables</h1>
+  <button form="save-form" class="rounded bg-slate-900 text-white text-sm px-3 py-1.5">Save changes</button>
+</div>
+
+<p class="text-xs text-slate-500 mb-4">
+  Global settings, editable here instead of the <code class="bg-slate-100 px-1 rounded">.env</code> file.
+  Saved values override <code class="bg-slate-100 px-1 rounded">.env</code> and take effect immediately;
+  use <b>Reset</b> to revert a field to its <code class="bg-slate-100 px-1 rounded">.env</code> default.
+  <b>Sender-identity</b> changes don't affect already-running tasks — see the note on save.
+</p>
+
+{# The save form and each per-field reset form are top-level siblings; inputs
+   and buttons attach to them by id via the HTML `form` attribute, so nothing
+   is nested (nested <form> is invalid). #}
+<form id="save-form" method="post" action="/settings/variables"></form>
+{% for group in groups %}{% for field in group.fields %}{% if field.overridden %}
+<form id="reset-{{ field.env_name }}" method="post" action="/settings/variables/reset">
+  <input type="hidden" name="key" value="{{ field.env_name }}">
+</form>
+{% endif %}{% endfor %}{% endfor %}
+
+{% for group in groups %}
+<section class="mb-6 rounded border bg-white">
+  <h2 class="px-4 py-2 border-b bg-slate-50 text-sm font-semibold text-slate-700">
+    {{ group.category }}
+    {% if group.fields[0].freeze %}
+    <span class="ml-2 rounded px-1.5 py-0.5 text-[10px] bg-amber-100 text-amber-700 font-normal">frozen per running task</span>
+    {% else %}
+    <span class="ml-2 rounded px-1.5 py-0.5 text-[10px] bg-blue-100 text-blue-700 font-normal">applies immediately</span>
+    {% endif %}
+  </h2>
+  <div class="divide-y">
+    {% for field in group.fields %}
+    <div class="px-4 py-3 flex flex-col sm:flex-row sm:items-center gap-2">
+      <label for="f-{{ field.env_name }}" class="sm:w-64 shrink-0">
+        <span class="block text-sm font-medium text-slate-800">{{ field.label }}</span>
+        <span class="block text-[11px] text-slate-400 font-mono">{{ field.env_name }}</span>
+      </label>
+      <input id="f-{{ field.env_name }}" form="save-form" name="{{ field.env_name }}"
+             type="text" autocomplete="off" spellcheck="false"
+             class="flex-1 rounded border border-slate-300 px-2 py-1 text-sm font-mono"
+             {% if field.is_secret %}
+             value="" placeholder="{{ field.display }} — leave blank to keep"
+             {% else %}
+             value="{{ field.display }}"
+             {% endif %}>
+      <div class="flex items-center gap-2 sm:w-28 shrink-0">
+        {% if field.overridden %}
+        <span class="rounded px-1.5 py-0.5 text-[10px] bg-slate-200 text-slate-600">overridden</span>
+        <button form="reset-{{ field.env_name }}" class="{{ btn.cls('neutral') }}">Reset</button>
+        {% endif %}
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+</section>
+{% endfor %}
+
+<div class="flex justify-end">
+  <button form="save-form" class="rounded bg-slate-900 text-white text-sm px-4 py-1.5">Save changes</button>
+</div>
+
+<dialog id="save-dialog" class="rounded-lg border-0 p-0 max-w-md shadow-xl backdrop:bg-black/30">
+  <div class="p-5">
+    <h3 class="text-base font-semibold mb-2">Save variable changes?</h3>
+    <ul class="text-sm text-slate-600 space-y-2 list-disc pl-5 mb-4">
+      <li><b>Sender identity</b> changes do <b>not</b> affect tasks that are already
+        running or paused — those keep the identity they were started with. New
+        values only apply to tasks started afterwards.</li>
+      <li><b>API keys</b> and <b>AI models</b> apply globally and immediately,
+        including to tasks already in progress.</li>
+    </ul>
+    <div class="flex justify-end gap-2">
+      <button type="button" id="save-cancel" class="{{ btn.cls('neutral') }}">Cancel</button>
+      <button type="button" id="save-confirm" class="rounded bg-slate-900 text-white text-sm px-3 py-1.5">Save</button>
+    </div>
+  </div>
+</dialog>
+
+<script>
+  (function () {
+    var form = document.getElementById('save-form');
+    var dialog = document.getElementById('save-dialog');
+    if (!form || !dialog || typeof dialog.showModal !== 'function') return;
+    var confirmed = false;
+    form.addEventListener('submit', function (e) {
+      if (confirmed) return;            // second pass: let it through
+      e.preventDefault();
+      dialog.showModal();
+    });
+    document.getElementById('save-confirm').addEventListener('click', function () {
+      confirmed = true;
+      dialog.close();
+      form.submit();
+    });
+    document.getElementById('save-cancel').addEventListener('click', function () {
+      dialog.close();
+    });
+  })();
+</script>
+{% endblock %}

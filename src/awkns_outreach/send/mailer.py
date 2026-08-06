@@ -384,8 +384,13 @@ def _send_via_gmail(
 def send_outreach_email(
     lead: Lead, campaign: Campaign, email: str, step_index: int, steps: list[dict],
     *, dry_run: bool = True, footer: Any = _DEFAULT_FOOTER,
+    identity: Optional[Identity] = None,
 ) -> SendResult:
-    ident = resolve_identity(campaign.sender_identity)
+    # `identity`, when given, is the sender identity frozen onto the running
+    # Task at start (see sequencer/lifecycle.start_task) — use it so a mid-run
+    # settings change doesn't retroactively alter this task. Falls back to a
+    # live resolve for direct/legacy callers.
+    ident = identity or resolve_identity(campaign.sender_identity)
     rendered = render_step(lead, campaign, step_index, email, ident, steps=steps, footer=footer)
     if dry_run:
         return SendResult(ok=True, id="dry-run", subject=rendered.subject)

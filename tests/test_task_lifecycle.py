@@ -63,7 +63,7 @@ def _lead(session, campaign, **kw):
 
 def _mock_ok(monkeypatch):
     monkeypatch.setattr(engine, "send_outreach_email",
-                        lambda l, c, e, s, steps, dry_run, footer=None: SendResult(ok=True, id=f"msg-{s}", subject="subj"))
+                        lambda l, c, e, s, steps, dry_run, footer=None, identity=None: SendResult(ok=True, id=f"msg-{s}", subject="subj"))
 
 
 # --- active_conflict --------------------------------------------------------
@@ -566,7 +566,7 @@ def test_task_send_window_flags_default_false(db_session):
 def test_runner_forwards_ignore_flags(db_session, monkeypatch):
     monkeypatch.setattr(
         engine, "send_outreach_email",
-        lambda l, c, e, s, steps, dry_run, footer=None: SendResult(ok=True, id="m1", subject="s"),
+        lambda l, c, e, s, steps, dry_run, footer=None, identity=None: SendResult(ok=True, id="m1", subject="s"),
     )
     sat_night = datetime(2026, 7, 25, 14, 0, tzinfo=UTC)  # Sat 22:00 Taipei
     c = _campaign(db_session)
