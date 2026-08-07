@@ -15,12 +15,17 @@ from typing import Any, Callable
 
 _DEFAULT_WIDTH = 560
 
+# Gmail-style font sizes (Small / Normal / Large / Huge) → px. "normal" keeps
+# the footer's original 13px so existing text blocks render unchanged.
+_TEXT_SIZES = {"small": 11, "normal": 13, "large": 18, "huge": 28}
+
 
 def _text_block(b: dict[str, Any]) -> str:
     align = b.get("align", "left")
+    size = _TEXT_SIZES.get(b.get("size", "normal"), _TEXT_SIZES["normal"])
     # Operator-authored inline HTML (links, {unsubscribe_url}); trusted content.
     return (
-        f'<div style="font-size:13px;line-height:1.6;color:#5f6368;'
+        f'<div style="font-size:{size}px;line-height:1.6;color:#5f6368;'
         f'text-align:{align}">{b.get("html", "")}</div>'
     )
 

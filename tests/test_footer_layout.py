@@ -36,6 +36,21 @@ def test_image_offset_ignored_for_center_and_when_zero():
     assert "margin-left" not in zero
 
 
+def _text(**kw):
+    b = {"type": "text", "html": "Hi"}
+    b.update(kw)
+    return {"rows": [{"columns": [{"blocks": [b]}]}]}
+
+
+def test_text_size_maps_to_px():
+    assert "font-size:11px" in render_layout(_text(size="small"))[0]
+    assert "font-size:18px" in render_layout(_text(size="large"))[0]
+    assert "font-size:28px" in render_layout(_text(size="huge"))[0]
+    # missing/unknown size → the original 13px "normal", unchanged behavior.
+    assert "font-size:13px" in render_layout(_text())[0]
+    assert "font-size:13px" in render_layout(_text(size="bogus"))[0]
+
+
 def test_button_renders_inline_styled_anchor():
     html, _ = render_layout({"rows": [{"columns": [{"blocks": [
         {"type": "button", "label": "Visit", "href": "http://x", "bg": "#111", "color": "#fff"},

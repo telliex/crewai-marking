@@ -26,7 +26,7 @@ function twFbAddRow(cols) {
 
 function twFbAddBlock(r, c, type) {
   const defaults = {
-    text: { type: 'text', html: 'New text · <a href="{unsubscribe_url}">Unsubscribe</a>', align: 'left' },
+    text: { type: 'text', html: 'New text · <a href="{unsubscribe_url}">Unsubscribe</a>', align: 'left', size: 'normal' },
     image: { type: 'image', src: '', alt: '', href: '', align: 'left', width: 120, offset: 0 },
     button: { type: 'button', label: 'Button', href: 'https://', bg: '#0f172a', color: '#ffffff', align: 'left' },
     divider: { type: 'divider' },
@@ -77,9 +77,15 @@ function twFbBlockControls(r, c, b, block) {
       ${['left', 'center', 'right'].map(a => `<option ${block[field] === a ? 'selected' : ''}>${a}</option>`).join('')}
     </select>`;
   if (t === 'text') {
+    // Gmail-style font sizes. Stored lowercase; shown capitalized.
+    const sizeSel = `<select class="border rounded text-xs" title="Font size"
+        onchange="twFbEdit(${r},${c},${b},'size',this.value)">
+        ${['small', 'normal', 'large', 'huge'].map(s =>
+          `<option value="${s}" ${(block.size || 'normal') === s ? 'selected' : ''}>${s[0].toUpperCase() + s.slice(1)}</option>`).join('')}
+      </select>`;
     return `<textarea class="w-full border rounded text-xs p-1" rows="2"
       oninput="twFbEdit(${r},${c},${b},'html',this.value)">${twFbEsc(block.html)}</textarea>
-      <div class="mt-1">${alignSel('align')}${rm}</div>`;
+      <div class="mt-1 flex items-center gap-1">${alignSel('align')}${sizeSel}${rm}</div>`;
   }
   if (t === 'image') {
     const preview = block.src ? `<img src="${twFbEsc(block.src)}" style="max-height:40px;display:block;margin-bottom:2px">` : '<span class="text-slate-400 text-xs">no image</span>';
