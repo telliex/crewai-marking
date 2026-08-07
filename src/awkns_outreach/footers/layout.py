@@ -30,10 +30,19 @@ def _image_block(b: dict[str, Any]) -> str:
     alt = escape(str(b.get("alt", "")), quote=True)
     align = b.get("align", "left")
     width = int(b.get("width") or 0)
+    # `offset` is the gap in px from the aligned side (left→margin-left,
+    # right→margin-right). Ignored for center. Kept separate from width so the
+    # two aren't confused in the editor.
+    offset = int(b.get("offset") or 0)
     wattr = f' width="{width}"' if width else ""
+    margin = ""
+    if offset and align == "left":
+        margin = f"margin-left:{offset}px;"
+    elif offset and align == "right":
+        margin = f"margin-right:{offset}px;"
     img = (
         f'<img src="{src}" alt="{alt}"{wattr} '
-        f'style="display:inline-block;border:0;max-width:100%;height:auto">'
+        f'style="display:inline-block;border:0;max-width:100%;height:auto;{margin}">'
     )
     href = b.get("href")
     if href:

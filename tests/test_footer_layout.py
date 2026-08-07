@@ -15,6 +15,27 @@ def test_two_images_render_side_by_side_in_one_row():
     assert "http://x/a.png" in html and "http://x/b.png" in html
 
 
+def _image(**kw):
+    b = {"type": "image", "src": "http://x/a.png", "alt": "A"}
+    b.update(kw)
+    return {"rows": [{"columns": [{"blocks": [b]}]}]}
+
+
+def test_image_offset_applies_margin_on_aligned_side():
+    # left → margin-left, right → margin-right (gap FROM that side).
+    left, _ = render_layout(_image(align="left", offset=20))
+    assert "margin-left:20px" in left and "margin-right" not in left
+    right, _ = render_layout(_image(align="right", offset=30))
+    assert "margin-right:30px" in right and "margin-left" not in right
+
+
+def test_image_offset_ignored_for_center_and_when_zero():
+    center, _ = render_layout(_image(align="center", offset=50))
+    assert "margin-left" not in center and "margin-right" not in center
+    zero, _ = render_layout(_image(align="left", offset=0))
+    assert "margin-left" not in zero
+
+
 def test_button_renders_inline_styled_anchor():
     html, _ = render_layout({"rows": [{"columns": [{"blocks": [
         {"type": "button", "label": "Visit", "href": "http://x", "bg": "#111", "color": "#fff"},
