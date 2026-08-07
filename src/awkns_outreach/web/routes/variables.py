@@ -15,10 +15,13 @@ from typing import Optional
 
 from fastapi import APIRouter, Depends, Form, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from awkns_outreach import config_store as cs
+from awkns_outreach.db.models import SenderProfile
 from awkns_outreach.web.deps import get_db, require_admin, templates
+from awkns_outreach.web.routes.senders import profile_locked
 
 router = APIRouter(dependencies=[Depends(require_admin)])
 
@@ -45,8 +48,20 @@ def _groups(db: Session) -> list[dict]:
 
 @router.get("/settings/variables", response_class=HTMLResponse)
 def variables_form(request: Request, db: Session = Depends(get_db), msg: Optional[str] = None):
+    # The Sender Identity section renders the saved SenderProfiles as a list
+    # under the global default (management + add live on /settings/senders).
+    profiles = db.scalars(
+        select(SenderProfile).order_by(
+            SenderProfile.status.asc(), SenderProfile.name.asc()
+        )
+    ).all()
+    locked = {p.id for p in profiles if profile_locked(db, p.id)}
     return templates.TemplateResponse(
-        request, "variables.html", {"groups": _groups(db), "msg": msg},
+        request, "variables.html",
+        {
+            "groups": _groups(db), "msg": msg,
+            "sender_profiles": profiles, "locked_profiles": locked,
+        },
     )
 
 
