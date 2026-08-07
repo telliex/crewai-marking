@@ -25,6 +25,7 @@ dependencies = [
     "apscheduler>=3.11.0",
     "typer>=0.15.1",
     "nh3>=0.3.6",
+    "markdown-it-py>=3.0.0",
 ]
 
 [project.scripts]

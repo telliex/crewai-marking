@@ -1,0 +1,54 @@
+{% extends "base.html" %}
+{% block title %}Docs — Awkns Outreach{% endblock %}
+{% block head_extra %}
+<style>
+  /* Tailwind's CDN preflight strips default markdown styling — restore a
+     readable "prose" look scoped to the rendered doc content. */
+  .doc-content { color: #1e293b; line-height: 1.7; font-size: 0.95rem; }
+  .doc-content h1 { font-size: 1.6rem; font-weight: 700; margin: 0 0 1rem; }
+  .doc-content h2 { font-size: 1.25rem; font-weight: 700; margin: 1.75rem 0 .75rem;
+    padding-bottom: .3rem; border-bottom: 1px solid #e2e8f0; }
+  .doc-content h3 { font-size: 1.05rem; font-weight: 600; margin: 1.25rem 0 .5rem; }
+  .doc-content p { margin: .75rem 0; }
+  .doc-content ul { list-style: disc; margin: .75rem 0; padding-left: 1.5rem; }
+  .doc-content ol { list-style: decimal; margin: .75rem 0; padding-left: 1.5rem; }
+  .doc-content li { margin: .3rem 0; }
+  .doc-content a { color: #2563eb; text-decoration: underline; }
+  .doc-content code { background: #f1f5f9; padding: .1rem .35rem; border-radius: .25rem;
+    font-size: .85em; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+  .doc-content pre { background: #0f172a; color: #e2e8f0; padding: 1rem; border-radius: .5rem;
+    overflow-x: auto; margin: 1rem 0; }
+  .doc-content pre code { background: none; padding: 0; color: inherit; }
+  .doc-content blockquote { border-left: 3px solid #cbd5e1; padding-left: 1rem;
+    color: #475569; margin: 1rem 0; }
+  .doc-content hr { border: 0; border-top: 1px solid #e2e8f0; margin: 1.5rem 0; }
+  .doc-content table { border-collapse: collapse; margin: 1rem 0; display: block; overflow-x: auto; }
+  .doc-content th, .doc-content td { border: 1px solid #e2e8f0; padding: .4rem .7rem; text-align: left; }
+  .doc-content th { background: #f8fafc; font-weight: 600; }
+  .doc-content strong { font-weight: 700; }
+</style>
+{% endblock %}
+{% block content %}
+<div class="flex flex-col md:flex-row gap-6">
+  <aside class="md:w-56 shrink-0">
+    <h1 class="text-lg font-semibold mb-3">Docs</h1>
+    <nav class="space-y-1">
+      {% for d in docs %}
+      <a href="/docs/{{ d.slug }}"
+         class="block rounded px-3 py-1.5 text-sm {% if d.slug == current %}bg-slate-900 text-white{% else %}text-slate-600 hover:bg-slate-100{% endif %}">
+        {{ d.title }}
+      </a>
+      {% else %}
+      <p class="text-sm text-slate-400">No docs found in <code>docs/</code>.</p>
+      {% endfor %}
+    </nav>
+  </aside>
+  <article class="min-w-0 flex-1">
+    {% if content %}
+    <div class="doc-content rounded border bg-white px-6 py-5">{{ content | safe }}</div>
+    {% else %}
+    <p class="text-slate-400">Select a document.</p>
+    {% endif %}
+  </article>
+</div>
+{% endblock %}

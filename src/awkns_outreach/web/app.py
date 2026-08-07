@@ -18,6 +18,7 @@ from awkns_outreach.db.session import session_scope
 from awkns_outreach.uploads import UPLOAD_DIR
 from awkns_outreach.web.routes import (
     admin,
+    docs,
     mailboxes,
     public,
     senders,
@@ -45,7 +46,8 @@ async def _lifespan(app: FastAPI):
 
 
 def create_app() -> FastAPI:
-    app = FastAPI(title="Awkns Outreach", docs_url="/docs", lifespan=_lifespan)
+    # Swagger UI moved off /docs so that path can serve the human docs viewer.
+    app = FastAPI(title="Awkns Outreach", docs_url="/api-docs", lifespan=_lifespan)
     app.include_router(public.router)
     app.include_router(admin.router)
     app.include_router(mailboxes.router)
@@ -55,6 +57,7 @@ def create_app() -> FastAPI:
     app.include_router(settings.router)
     app.include_router(variables.router)
     app.include_router(senders.router)
+    app.include_router(docs.router)
 
     UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
     app.mount("/uploads", StaticFiles(directory=UPLOAD_DIR), name="uploads")
