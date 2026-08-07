@@ -18,11 +18,11 @@
    and buttons attach to them by id via the HTML `form` attribute, so nothing
    is nested (nested <form> is invalid). #}
 <form id="save-form" method="post" action="/settings/variables"></form>
-{% for group in groups %}{% for field in group.fields %}{% if field.overridden %}
+{% for group in groups %}{% for field in group.fields %}
 <form id="reset-{{ field.env_name }}" method="post" action="/settings/variables/reset">
   <input type="hidden" name="key" value="{{ field.env_name }}">
 </form>
-{% endif %}{% endfor %}{% endfor %}
+{% endfor %}{% endfor %}
 
 {% for group in groups %}
 {% set is_identity = group.fields[0].freeze %}
@@ -63,8 +63,9 @@
       <div class="flex items-center gap-2 sm:w-28 shrink-0">
         {% if field.overridden %}
         <span class="rounded px-1.5 py-0.5 text-[10px] bg-slate-200 text-slate-600">overridden</span>
-        <button form="reset-{{ field.env_name }}" class="{{ btn.cls('neutral') }}">Reset</button>
         {% endif %}
+        <button form="reset-{{ field.env_name }}" class="{{ btn.cls('neutral') }}"
+                title="Restore this field to its default (discards unsaved edits)">Reset</button>
       </div>
     </div>
     {% endfor %}
