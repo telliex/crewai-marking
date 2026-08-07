@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% import "_sender_select.html" as snd %}
 {% block title %}Edit {{ c.name }}{% endblock %}
 {% block content %}
 <a href="/campaigns/{{ c.id }}" class="text-xs text-slate-500 hover:underline">&larr; {{ c.name }}</a>
@@ -35,6 +36,15 @@
     <p class="text-xs text-slate-400 mt-1">
       Connect a Gmail mailbox on the <a href="/mailboxes" class="underline">Mailboxes</a> page to
       send this campaign's sequence as that inbox instead of the default Resend sender.
+    </p>
+  </div>
+  <div>
+    <label class="block text-sm font-medium mb-1">Sender identity</label>
+    {{ snd.sender_select(c.sender_profile_id, sender_profiles) }}
+    <p class="text-xs text-slate-400 mt-1">
+      Pick a saved sender from <a href="/settings/senders" class="underline">Senders</a>, or keep the
+      global default. Changing this only affects tasks started afterwards — running tasks keep the
+      identity they started with. Note: on a Gmail mailbox the From address is forced to the inbox.
     </p>
   </div>
   <div class="flex gap-2">

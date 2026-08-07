@@ -1,0 +1,74 @@
+{% extends "base.html" %}
+{% import "_buttons.html" as btn %}
+{% block title %}Senders — Awkns Outreach{% endblock %}
+{% block content %}
+<div class="flex items-center justify-between mb-4">
+  <h1 class="text-lg font-semibold">Sender profiles</h1>
+  <a href="/settings/senders/new" class="rounded bg-slate-900 text-white text-sm px-3 py-1.5">+ New sender</a>
+</div>
+
+<p class="text-xs text-slate-500 mb-4">
+  Named sender identities a campaign can pick on its form. Blank fields fall back to the global
+  <a href="/settings/variables" class="underline">Variables</a> identity. A sender used by a
+  <b>running</b> task is locked (can't be edited or deleted) but can still be archived — archived
+  senders just disappear from new campaign dropdowns; campaigns already using them keep working.
+</p>
+
+<div class="overflow-x-auto rounded border bg-white">
+  <table class="w-full text-sm">
+    <thead class="bg-slate-100 text-slate-500 text-left">
+      <tr>
+        <th class="px-3 py-2">Name</th>
+        <th class="px-3 py-2">From</th>
+        <th class="px-3 py-2">Status</th>
+        <th class="px-3 py-2">Actions</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for p in profiles %}
+      {% set is_locked = p.id in locked %}
+      <tr class="border-t align-top">
+        <td class="px-3 py-2">
+          {% if is_locked %}
+          <span class="font-medium">{{ p.name }}</span>
+          <span class="ml-1 rounded px-1.5 py-0.5 text-[10px] bg-amber-100 text-amber-700">in use · locked</span>
+          {% else %}
+          <a href="/settings/senders/{{ p.id }}/edit" class="text-blue-700 hover:underline">{{ p.name }}</a>
+          {% endif %}
+        </td>
+        <td class="px-3 py-2 text-slate-500">
+          {{ p.from_name or "—" }}{% if p.from_email %} &lt;{{ p.from_email }}&gt;{% endif %}
+          {% if not p.from_email %}<span class="text-slate-400 text-xs">(inherits global)</span>{% endif %}
+        </td>
+        <td class="px-3 py-2 text-slate-500">{{ p.status }}</td>
+        <td class="px-3 py-2">
+          <div class="flex items-center gap-2">
+            {% if not is_locked %}
+            <a href="/settings/senders/{{ p.id }}/edit" class="{{ btn.cls('neutral') }}">Edit</a>
+            {% endif %}
+            <form method="post" action="/settings/senders/{{ p.id }}/edit" class="inline">
+              {% if p.status == 'archived' %}
+              <input type="hidden" name="action" value="unarchive">
+              <button type="submit" class="{{ btn.cls('primary') }}">Unarchive</button>
+              {% else %}
+              <input type="hidden" name="action" value="archive">
+              <button type="submit" class="{{ btn.cls('warn') }}">Archive</button>
+              {% endif %}
+            </form>
+            {% if not is_locked %}
+            <form method="post" action="/settings/senders/{{ p.id }}/edit" class="inline"
+                  onsubmit="return confirm('Delete this sender? Campaigns using it fall back to the global identity.');">
+              <input type="hidden" name="action" value="delete">
+              <button type="submit" class="{{ btn.cls('danger_solid') }}">Delete</button>
+            </form>
+            {% endif %}
+          </div>
+        </td>
+      </tr>
+      {% else %}
+      <tr class="border-t"><td colspan="4" class="px-3 py-6 text-center text-slate-400">No sender profiles yet.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}

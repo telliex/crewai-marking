@@ -1,0 +1,12 @@
+{# Sender-profile dropdown for the campaign form. `current` = campaign's
+   sender_profile_id (None = global default); `profiles` = active SenderProfiles.
+     {% import "_sender_select.html" as snd %}
+     {{ snd.sender_select(c.sender_profile_id, sender_profiles) }} #}
+{%- macro sender_select(current, profiles, cls="w-full border rounded px-2 py-1.5") -%}
+<select name="sender_profile_id" class="{{ cls }}">
+  <option value=""{% if not current %} selected{% endif %}>Default (global settings)</option>
+  {% for p in profiles %}
+  <option value="{{ p.id }}"{% if current == p.id %} selected{% endif %}>{{ p.name }}</option>
+  {% endfor %}
+</select>
+{%- endmacro -%}

@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% import "_sender_select.html" as snd %}
 {% block title %}New campaign{% endblock %}
 {% block content %}
 {% include "_import_problems_dialog.html" %}
@@ -34,11 +35,18 @@
     <textarea name="angle_prompt" rows="2" class="w-full border rounded px-2 py-1.5"
       placeholder="Leave blank to use the default research prompt.">{{ angle_prompt or '' }}</textarea>
   </div>
+  <div>
+    <label class="block text-sm font-medium mb-1">Sender identity <span class="text-slate-400 font-normal">(optional)</span></label>
+    {{ snd.sender_select(sender_profile_id, sender_profiles or []) }}
+    <p class="text-xs text-slate-400 mt-1">
+      Pick a saved sender from <a href="/settings/senders" class="underline">Senders</a>, or keep the
+      global default. You can change this later on the campaign.
+    </p>
+  </div>
   <button class="rounded bg-slate-900 text-white text-sm px-4 py-2">Create campaign</button>
 </form>
 <p class="text-xs text-slate-500 mt-4">
-  Seed companies can be edited field-by-field after creation. Sequence copy &amp;
-  sender identity are edited on the campaign after creation (JSON for now; a form is a follow-up).
+  Seed companies and sequence copy can be edited after creation.
 </p>
 
 <script>

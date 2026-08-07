@@ -23,6 +23,16 @@ class Identity:
     unsubscribe_mailto: str
 
 
+def campaign_overrides(campaign: Any) -> dict[str, Any]:
+    """The override dict for a campaign's identity: its selected SenderProfile
+    if any, else its legacy `sender_identity` JSON. Pass the result to
+    resolve_identity() (which fills blanks from the global settings)."""
+    profile = getattr(campaign, "sender_profile", None)
+    if profile is not None:
+        return profile.as_overrides()
+    return campaign.sender_identity or {}
+
+
 def resolve_identity(overrides: Optional[dict[str, Any]] = None) -> Identity:
     o = overrides or {}
     from_email = o.get("from") or settings.outreach_from

@@ -29,7 +29,7 @@ from awkns_outreach.compliance import (
     suppress,
 )
 from awkns_outreach.db.models import Campaign, Event, Lead
-from awkns_outreach.identity import Identity, resolve_identity
+from awkns_outreach.identity import Identity, campaign_overrides, resolve_identity
 from awkns_outreach.send.mailer import send_outreach_email
 from awkns_outreach.sequencer.limits import SEND, in_send_window, warmup_cap
 
@@ -100,7 +100,7 @@ def process_campaign(
     ident = (
         Identity(**identity_snapshot)
         if identity_snapshot
-        else resolve_identity(campaign.sender_identity)
+        else resolve_identity(campaign_overrides(campaign))
     )
 
     if not any(steps_by_tier.values()):

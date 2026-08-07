@@ -20,7 +20,7 @@ from awkns_outreach.apollo.seed import (
     duplicate_email_problems,
     parse_seed_companies,
 )
-from awkns_outreach.db.models import Campaign, Lead, Mailbox, Suppression, Task
+from awkns_outreach.db.models import Campaign, Lead, Mailbox, SenderProfile, Suppression, Task
 from awkns_outreach.web.deps import get_db, require_admin, templates
 from awkns_outreach.web.stats import campaign_stats
 from awkns_outreach.writer.tiers import TIERS, classify_campaign_tiers
@@ -109,9 +109,22 @@ def dashboard(
     )
 
 
+def _active_sender_profiles(db: Session) -> list[SenderProfile]:
+    """Active (non-archived) sender profiles for the campaign form dropdown."""
+    return list(
+        db.scalars(
+            select(SenderProfile)
+            .where(SenderProfile.status == "active")
+            .order_by(SenderProfile.name.asc())
+        ).all()
+    )
+
+
 @router.get("/campaigns/new", response_class=HTMLResponse)
-def new_campaign_form(request: Request):
-    return templates.TemplateResponse(request, "new_campaign.html", {})
+def new_campaign_form(request: Request, db: Session = Depends(get_db)):
+    return templates.TemplateResponse(
+        request, "new_campaign.html", {"sender_profiles": _active_sender_profiles(db)},
+    )
 
 
 @router.get("/campaigns/seed-template.csv")
@@ -143,6 +156,7 @@ def create_campaign(
     angle_prompt: str = Form(""),
     seed_text: str = Form(""),
     seed_file: Optional[UploadFile] = File(None),
+    sender_profile_id: str = Form(""),
     db: Session = Depends(get_db),
 ):
     problems: list[str] = []
@@ -163,6 +177,8 @@ def create_campaign(
                 "titles": titles,
                 "angle_prompt": angle_prompt,
                 "seed_text": seed_text,
+                "sender_profile_id": sender_profile_id or None,
+                "sender_profiles": _active_sender_profiles(db),
             },
         )
 
@@ -172,6 +188,8 @@ def create_campaign(
         seed_companies=seed_companies,
         angle_prompt=angle_prompt.strip() or None,
         sender_identity={},
+        # Empty option = "Default (global settings)" -> NULL -> global identity.
+        sender_profile_id=sender_profile_id or None,
     )
     db.add(c)
     db.commit()
@@ -251,7 +269,8 @@ def edit_campaign_form(campaign_id: str, request: Request, db: Session = Depends
         select(Mailbox).where(Mailbox.status == "connected").order_by(Mailbox.email)
     ).all()
     return templates.TemplateResponse(
-        request, "campaign_edit.html", {"c": c, "mailboxes": mailboxes}
+        request, "campaign_edit.html",
+        {"c": c, "mailboxes": mailboxes, "sender_profiles": _active_sender_profiles(db)},
     )
 
 
@@ -263,6 +282,7 @@ def save_campaign_edit(
     titles: str = Form(""),
     angle_prompt: str = Form(""),
     mailbox_id: str = Form(""),
+    sender_profile_id: str = Form(""),
     db: Session = Depends(get_db),
 ):
     c = _get_campaign(db, campaign_id)
@@ -275,6 +295,8 @@ def save_campaign_edit(
     c.angle_prompt = angle_prompt.strip() or None
     # Empty option = "Default (Resend)" -> NULL mailbox_id, today's behaviour.
     c.mailbox_id = mailbox_id or None
+    # Empty option = "Default (global settings)" -> NULL -> global identity.
+    c.sender_profile_id = sender_profile_id or None
     db.commit()
     return RedirectResponse(f"/campaigns/{c.id}?msg=Campaign updated.", status_code=303)
 

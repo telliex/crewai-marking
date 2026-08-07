@@ -20,7 +20,7 @@ from sqlalchemy import func, select, update
 from sqlalchemy.orm import Session
 
 from awkns_outreach.db.models import Lead, MailSequence, Task
-from awkns_outreach.identity import resolve_identity
+from awkns_outreach.identity import campaign_overrides, resolve_identity
 
 log = logging.getLogger("awkns_outreach.sequencer.lifecycle")
 
@@ -121,7 +121,7 @@ def start_task(
     # later change to a sender-identity variable doesn't retroactively alter
     # this running task. The send path reads this instead of re-resolving live.
     task.identity_snapshot = dataclasses.asdict(
-        resolve_identity(campaign.sender_identity)
+        resolve_identity(campaign_overrides(campaign))
     )
 
     effective_tier = func.coalesce(Lead.tier, "B")

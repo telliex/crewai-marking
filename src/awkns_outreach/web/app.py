@@ -20,6 +20,7 @@ from awkns_outreach.web.routes import (
     admin,
     mailboxes,
     public,
+    senders,
     sequences,
     settings,
     tasks,
@@ -53,6 +54,7 @@ def create_app() -> FastAPI:
     app.include_router(tasks.router)
     app.include_router(settings.router)
     app.include_router(variables.router)
+    app.include_router(senders.router)
 
     UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
     app.mount("/uploads", StaticFiles(directory=UPLOAD_DIR), name="uploads")

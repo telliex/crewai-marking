@@ -38,7 +38,7 @@ from awkns_outreach.db.models import Campaign, FooterTemplate, Lead, Mailbox
 from awkns_outreach.gmail.api import ensure_fresh_token, send_raw
 from awkns_outreach.gmail.mime import Attachment, build_raw_message, new_message_id
 from awkns_outreach.gmail.oauth import NeedsReconnect
-from awkns_outreach.identity import Identity, resolve_identity
+from awkns_outreach.identity import Identity, campaign_overrides, resolve_identity
 from awkns_outreach.uploads import UPLOAD_DIR
 
 _RESEND_URL = "https://api.resend.com/emails"
@@ -263,7 +263,7 @@ def render_step(
     identity: Optional[Identity] = None, *, steps: list[dict],
     footer: Any = _DEFAULT_FOOTER,
 ) -> RenderedEmail:
-    ident = identity or resolve_identity(campaign.sender_identity)
+    ident = identity or resolve_identity(campaign_overrides(campaign))
     if step_index >= len(steps):
         raise IndexError(f"No sequence step at index {step_index}")
     step = steps[step_index]
@@ -322,9 +322,10 @@ def _resolve_attachments(attachments: list[dict]) -> list[Attachment]:
 
 def _apply_mailbox_identity(ident: Identity, mailbox: Mailbox, campaign: Campaign) -> None:
     """Gmail forces From to the connected mailbox (it rewrites arbitrary From
-    addresses anyway). An explicit campaign sender_identity override still
-    wins over the mailbox's display_name, which wins over the env default."""
-    overrides = campaign.sender_identity or {}
+    addresses anyway). An explicit campaign identity override (from its selected
+    SenderProfile or legacy sender_identity) still wins over the mailbox's
+    display_name, which wins over the env default."""
+    overrides = campaign_overrides(campaign)
     ident.from_email = mailbox.email
     if not overrides.get("from_name") and mailbox.display_name:
         ident.from_name = mailbox.display_name
@@ -390,7 +391,7 @@ def send_outreach_email(
     # Task at start (see sequencer/lifecycle.start_task) — use it so a mid-run
     # settings change doesn't retroactively alter this task. Falls back to a
     # live resolve for direct/legacy callers.
-    ident = identity or resolve_identity(campaign.sender_identity)
+    ident = identity or resolve_identity(campaign_overrides(campaign))
     rendered = render_step(lead, campaign, step_index, email, ident, steps=steps, footer=footer)
     if dry_run:
         return SendResult(ok=True, id="dry-run", subject=rendered.subject)

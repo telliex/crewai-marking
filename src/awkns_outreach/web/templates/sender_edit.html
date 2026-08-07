@@ -1,0 +1,62 @@
+{% extends "base.html" %}
+{% import "_buttons.html" as btn %}
+{% block title %}{{ "Edit sender" if p else "New sender" }} — Awkns Outreach{% endblock %}
+{% block content %}
+<a href="/settings/senders" class="text-xs text-slate-500 hover:underline">&larr; Senders</a>
+<h1 class="text-lg font-semibold mb-4">{{ "Edit sender" if p else "New sender" }}</h1>
+
+{% if locked %}
+<div class="mb-4 rounded border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
+  This sender is used by a running task, so its identity is locked and can't be edited or deleted.
+  You can still <b>archive</b> it from the <a href="/settings/senders" class="underline">list</a>.
+</div>
+{% endif %}
+
+{% set ro = "disabled" if locked else "" %}
+<form method="post" action="{{ '/settings/senders/' ~ p.id ~ '/edit' if p else '/settings/senders' }}"
+      class="max-w-xl space-y-4">
+  {% if p %}<input type="hidden" name="action" value="save">{% endif %}
+
+  <div>
+    <label class="block text-sm font-medium mb-1">Name</label>
+    <input name="name" required {{ ro }} value="{{ p.name if p else '' }}"
+           class="w-full border rounded px-2 py-1.5" placeholder="e.g. Sales · Steven">
+  </div>
+
+  <p class="text-xs text-slate-500">
+    Leave a field blank to inherit the global <a href="/settings/variables" class="underline">Variables</a> value.
+  </p>
+
+  {% macro field(fname, label, ph="") %}
+  <div>
+    <label class="block text-sm font-medium mb-1">{{ label }}
+      <span class="text-slate-400 font-mono text-[11px]">{{ fname }}</span></label>
+    <input name="{{ fname }}" {{ ro }} value="{{ (p[fname] if p else '') }}"
+           class="w-full border rounded px-2 py-1.5 font-mono text-sm"
+           placeholder="{{ ph }}" autocomplete="off" spellcheck="false">
+  </div>
+  {% endmacro %}
+
+  {{ field("from_email", "From email", "sales@pounds.network") }}
+  {{ field("from_name", "From name", "Steven") }}
+  {{ field("reply_to", "Reply-To", "blank → uses From email") }}
+  {{ field("sender_name", "Sender name (body signature)", "Steven Wu") }}
+  {{ field("company", "Company", "Awkns") }}
+  {{ field("postal_address", "Postal address", "required for real sends (CAN-SPAM)") }}
+  {{ field("unsubscribe_mailto", "Unsubscribe mailto", "unsubscribe@…") }}
+
+  <div class="rounded border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-500 space-y-1">
+    <p>· <b>Postal address</b> is legally required for real sends — if blank here it must be set on the
+      global Variables identity, or sending is blocked.</p>
+    <p>· For campaigns sent through a connected <b>Gmail</b> mailbox, the From address is forced to the
+      mailbox; this <b>From email</b> only takes effect on the default (Resend) sender.</p>
+  </div>
+
+  {% if not locked %}
+  <div class="flex gap-2">
+    <button class="rounded bg-slate-900 text-white text-sm px-4 py-2">{{ "Save" if p else "Create sender" }}</button>
+    <a href="/settings/senders" class="rounded border text-sm px-4 py-2">Cancel</a>
+  </div>
+  {% endif %}
+</form>
+{% endblock %}

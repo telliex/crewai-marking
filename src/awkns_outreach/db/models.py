@@ -79,6 +79,12 @@ class Campaign(Base):
     mailbox_id: Mapped[Optional[str]] = mapped_column(
         ForeignKey("mailbox.id", ondelete="SET NULL"), nullable=True
     )
+    # NULL = use the global Variables sender identity. Set to a SenderProfile to
+    # apply that named identity; missing profile fields fall back per-field to
+    # the global default. SET NULL so a deleted profile degrades gracefully.
+    sender_profile_id: Mapped[Optional[str]] = mapped_column(
+        ForeignKey("sender_profile.id", ondelete="SET NULL"), nullable=True
+    )
 
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
@@ -91,6 +97,7 @@ class Campaign(Base):
         back_populates="campaign", cascade="all, delete-orphan"
     )
     mailbox: Mapped[Optional["Mailbox"]] = relationship(back_populates="campaigns")
+    sender_profile: Mapped[Optional["SenderProfile"]] = relationship()
     tasks: Mapped[list["Task"]] = relationship(
         back_populates="campaign", cascade="all, delete-orphan"
     )
@@ -358,6 +365,55 @@ class AppSetting(Base):
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
     )
+
+
+class SenderProfile(Base):
+    """A named, reusable sender identity (a "sender group"). A Campaign picks
+    one via `sender_profile_id`; blank fields fall back per-field to the global
+    Variables identity, so a profile only needs to set what differs.
+
+    NOTE: on Gmail-connected campaigns the From address is forced to the mailbox
+    (see send/mailer._apply_mailbox_identity), so a profile's `from_email` only
+    takes effect on the Resend path. Once a profile is in use by a campaign with
+    a running/paused task its identity is frozen onto that task, so it becomes
+    edit/delete-locked (but still archivable) — see web/routes/senders.py."""
+
+    __tablename__ = "sender_profile"
+
+    id: Mapped[str] = mapped_column(String, primary_key=True, default=_uuid)
+    name: Mapped[str] = mapped_column(String, nullable=False)
+    # The 7 fields resolve_identity consumes; "" means "inherit the global default".
+    from_email: Mapped[str] = mapped_column(String, nullable=False, default="")
+    from_name: Mapped[str] = mapped_column(String, nullable=False, default="")
+    reply_to: Mapped[str] = mapped_column(String, nullable=False, default="")
+    sender_name: Mapped[str] = mapped_column(String, nullable=False, default="")
+    company: Mapped[str] = mapped_column(String, nullable=False, default="")
+    postal_address: Mapped[str] = mapped_column(String, nullable=False, default="")
+    unsubscribe_mailto: Mapped[str] = mapped_column(String, nullable=False, default="")
+    status: Mapped[str] = mapped_column(String, default="active", nullable=False)  # active | archived
+
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+    def as_overrides(self) -> dict[str, str]:
+        """Shape for resolve_identity's `overrides` dict (note the key is
+        `from`, not `from_email`). Empty fields stay empty so resolve_identity
+        falls back to the global settings per field; `reply_to` first falls back
+        to this profile's own `from_email` (so replies don't go to the global
+        from) before the global default."""
+        return {
+            "from": self.from_email,
+            "from_name": self.from_name,
+            "reply_to": self.reply_to or self.from_email,
+            "sender_name": self.sender_name,
+            "company": self.company,
+            "postal_address": self.postal_address,
+            "unsubscribe_mailto": self.unsubscribe_mailto,
+        }
 
 
 class Task(Base):
