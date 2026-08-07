@@ -8,7 +8,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from awkns_outreach.db.models import Campaign, Event, Lead, Task
-from awkns_outreach.sequencer.limits import SEND, warmup_cap
+from awkns_outreach.sequencer.limits import daily_cap, warmup_cap
 
 _STATUSES = [
     "active", "sending", "completed", "replied",
@@ -37,7 +37,7 @@ def campaign_stats(session: Session, campaign: Campaign, now: Optional[datetime]
         .join(Lead, Event.lead_id == Lead.id)
         .where(Lead.campaign_id == campaign.id, Event.type == "sent")
     ) or 0
-    cap = min(SEND.hard_daily_cap, warmup_cap(campaign.warmup_start, now))
+    cap = min(daily_cap(), warmup_cap(campaign.warmup_start, now))
 
     active_task = session.scalar(
         select(Task)

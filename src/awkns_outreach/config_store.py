@@ -44,6 +44,7 @@ class VarSpec:
 CAT_IDENTITY = "Sender Identity"
 CAT_KEYS = "API Keys"
 CAT_MODELS = "AI Models"
+CAT_SENDING = "Sending / Warmup"
 
 
 REGISTRY: list[VarSpec] = [
@@ -63,6 +64,16 @@ REGISTRY: list[VarSpec] = [
     # --- AI models (applied globally & immediately) ---
     VarSpec("CREW_MODEL", "crew_model", "Crew model (LiteLLM id, e.g. anthropic/claude-...)", CAT_MODELS),
     VarSpec("TIER_MODEL", "tier_model", "Tier model (bare Anthropic id)", CAT_MODELS),
+    # --- Sending limits / warmup (applied globally & immediately) ---
+    VarSpec("WARMUP_DAILY_CAP", "warmup_daily_cap", "Daily send cap per campaign", CAT_SENDING),
+    VarSpec("WARMUP_RAMP", "warmup_ramp", "Warmup ramp (comma-separated per-day caps)", CAT_SENDING),
+    VarSpec("WARMUP_DEFAULT_MODE", "warmup_default_mode", "New-campaign warmup: warm | full | none", CAT_SENDING),
+    VarSpec("SEND_HOURS", "send_hours", "Send window hours, local (start-end, e.g. 9-17)", CAT_SENDING),
+    VarSpec("SEND_DAYS", "send_days", "Send weekdays (0=Mon … 6=Sun, comma-separated)", CAT_SENDING),
+    VarSpec("SEND_MIN_GAP_MS", "send_min_gap_ms", "Min gap between sends (ms)", CAT_SENDING),
+    VarSpec("SEND_JITTER_MS", "send_jitter_ms", "Random extra gap jitter (ms)", CAT_SENDING),
+    VarSpec("MAX_SEND_ERRORS", "max_send_errors", "Errors before a lead is failed", CAT_SENDING),
+    VarSpec("STALE_CLAIM_SECONDS", "stale_claim_seconds", "Stale 'sending' claim recovery (seconds)", CAT_SENDING),
 ]
 
 BY_KEY: dict[str, VarSpec] = {spec.env_name: spec for spec in REGISTRY}

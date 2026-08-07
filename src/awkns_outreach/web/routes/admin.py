@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import csv
 import io
+from datetime import datetime, timezone
 from math import ceil
 from typing import Optional
 
@@ -21,6 +22,7 @@ from awkns_outreach.apollo.seed import (
     parse_seed_companies,
 )
 from awkns_outreach.db.models import Campaign, Lead, Mailbox, SenderProfile, Suppression, Task
+from awkns_outreach.sequencer.limits import initial_warmup_start
 from awkns_outreach.web.deps import get_db, require_admin, templates
 from awkns_outreach.web.stats import campaign_stats
 from awkns_outreach.writer.tiers import TIERS, classify_campaign_tiers
@@ -190,6 +192,9 @@ def create_campaign(
         sender_identity={},
         # Empty option = "Default (global settings)" -> NULL -> global identity.
         sender_profile_id=sender_profile_id or None,
+        # Stamp warmup_start per the global WARMUP_DEFAULT_MODE so a new campaign
+        # isn't silently stuck at the ultra-conservative floor (5/day).
+        warmup_start=initial_warmup_start(datetime.now(timezone.utc)),
     )
     db.add(c)
     db.commit()

@@ -63,6 +63,28 @@ class Settings(BaseSettings):
     google_client_id: str = Field(default="", alias="GOOGLE_CLIENT_ID")
     google_client_secret: str = Field(default="", alias="GOOGLE_CLIENT_SECRET")
 
+    # --- Sending limits / warmup (operator-tunable; parsed at use in
+    # sequencer/limits.py, falling back to SendLimits defaults if malformed) ---
+    # Per-campaign 24h ceiling.
+    warmup_daily_cap: str = Field(default="100", alias="WARMUP_DAILY_CAP")
+    # Comma-separated per-day caps from warmup_start: day0,day1,... then hold.
+    warmup_ramp: str = Field(
+        default="5,10,15,20,25,30,40,50,60,70,80,90,100", alias="WARMUP_RAMP"
+    )
+    # How a NEW campaign warms up: "warm" (start warming today), "full" (already
+    # warmed → full speed immediately), or "none" (leave unset → 5/day).
+    warmup_default_mode: str = Field(default="warm", alias="WARMUP_DEFAULT_MODE")
+    # Local send window "start-end" (24h, [start,end)) and weekdays (0=Mon).
+    send_hours: str = Field(default="9-17", alias="SEND_HOURS")
+    send_days: str = Field(default="0,1,2,3,4", alias="SEND_DAYS")
+    # Human-scale spacing between real sends: min gap + random jitter (ms).
+    send_min_gap_ms: str = Field(default="90000", alias="SEND_MIN_GAP_MS")
+    send_jitter_ms: str = Field(default="150000", alias="SEND_JITTER_MS")
+    # Give up on a lead's step after this many errors; reclaim a crashed
+    # "sending" claim after this many seconds.
+    max_send_errors: str = Field(default="3", alias="MAX_SEND_ERRORS")
+    stale_claim_seconds: str = Field(default="600", alias="STALE_CLAIM_SECONDS")
+
     @property
     def reply_to(self) -> str:
         return self.outreach_reply_to or self.outreach_from

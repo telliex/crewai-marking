@@ -122,11 +122,8 @@ warmup（暖機）是逐步養新網域信譽的機制：從 `campaign.warmup_st
 | 直接滿速 100/天（略過暖機，僅限已養熟的網域） | **≥12 天前**的日期 |
 | 最保守、固定 5 封/天 | 留空 `NULL` |
 
-> ⚠️ **目前的功能缺口**：沒有任何 UI／CLI／建立流程會寫入 `warmup_start`，`create_campaign` 也不設它，所以**透過介面建立的 campaign 預設都是 `NULL` → 實際上每天只送得出 5 封**，除非直接改資料庫。要調整目前只能下 SQL，例如：
-> ```sql
-> -- 直接滿速 100/天（網域已養熟時）
-> UPDATE campaign SET warmup_start = now() - interval '13 days' WHERE id = '<campaign_id>';
-> -- 正常開始暖機
-> UPDATE campaign SET warmup_start = now() WHERE id = '<campaign_id>';
-> ```
-> （未來可在 campaign 編輯頁加一個 warmup 設定，把這個缺口補上。）
+> ✅ **現在可在 Settings → Variables 的「Sending / Warmup」區塊設定**：`WARMUP_DEFAULT_MODE` 決定**新建 campaign** 的暖機方式——`warm`（建立當天開始暖機，預設）、`full`（直接滿速）、`none`（維持 5/天）。`create_campaign` 會依此自動寫入 `warmup_start`，所以新 campaign **不再卡在 5 封/天**。
+>
+> 同一區塊還可調整其他寄送旋鈕：`WARMUP_DAILY_CAP`（每日上限）、`WARMUP_RAMP`（爬升曲線）、`SEND_HOURS`/`SEND_DAYS`（送信時段/日）、`SEND_MIN_GAP_MS`/`SEND_JITTER_MS`（間隔）、`MAX_SEND_ERRORS`、`STALE_CLAIM_SECONDS`。留空或格式錯誤會自動回退到程式內建預設。
+>
+> 註：`WARMUP_DEFAULT_MODE` 只影響**之後新建**的 campaign；既有 campaign 的 `warmup_start` 若要改，仍是逐一調整（目前既有 campaign 沒有 warmup 編輯 UI，可用 SQL：`UPDATE campaign SET warmup_start = now() - interval '13 days' WHERE id = '<id>';` 直接滿速）。

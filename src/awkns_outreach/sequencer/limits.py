@@ -7,9 +7,11 @@ Campaign.warmup_start).
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 from zoneinfo import ZoneInfo
+
+from awkns_outreach.config import settings
 
 
 @dataclass(frozen=True)
@@ -29,6 +31,76 @@ class SendLimits:
 
 SEND = SendLimits()
 
+
+# --- Operator-tunable accessors -------------------------------------------
+# These read the live (DB-overridable) settings and parse the string values,
+# falling back to the SEND defaults above if unset or malformed. Call them at
+# use time (not import) so a Variables-page save takes effect immediately.
+
+def _int(value: object, default: int) -> int:
+    try:
+        v = int(str(value).strip())
+        return v if v > 0 else default
+    except (TypeError, ValueError):
+        return default
+
+
+def _int_tuple(value: object, default: tuple[int, ...]) -> tuple[int, ...]:
+    try:
+        parts = [int(x) for x in str(value).replace(" ", "").split(",") if x != ""]
+        return tuple(parts) if parts else default
+    except (TypeError, ValueError):
+        return default
+
+
+def daily_cap() -> int:
+    """Absolute per-campaign 24h ceiling."""
+    return _int(settings.warmup_daily_cap, SEND.hard_daily_cap)
+
+
+def ramp() -> tuple[int, ...]:
+    """Per-day cap curve from warmup_start (day 0, day 1, … then hold)."""
+    return _int_tuple(settings.warmup_ramp, SEND.warmup_ramp)
+
+
+def send_window_hours() -> tuple[int, int]:
+    """Local send window as [start, end) 24h. Falls back if malformed."""
+    try:
+        a, b = str(settings.send_hours).split("-")
+        a, b = int(a), int(b)
+        if 0 <= a < b <= 24:
+            return (a, b)
+    except (TypeError, ValueError):
+        pass
+    return SEND.send_hours
+
+
+def send_workdays() -> tuple[int, ...]:
+    """Allowed weekdays (0=Mon … 6=Sun). Falls back if empty/malformed."""
+    days = tuple(d for d in _int_tuple(settings.send_days, SEND.send_days) if 0 <= d <= 6)
+    return days or SEND.send_days
+
+
+def min_gap_ms() -> int:
+    return _int(settings.send_min_gap_ms, SEND.min_gap_ms)
+
+
+def jitter_ms() -> int:
+    return _int(settings.send_jitter_ms, SEND.jitter_ms)
+
+
+def initial_warmup_start(now: datetime) -> Optional[datetime]:
+    """The warmup_start to stamp on a NEW campaign, per WARMUP_DEFAULT_MODE:
+    "warm" → now (ramp from day 0); "full" → far enough back to be at full
+    speed immediately; "none" → None (stays at the ultra-conservative floor)."""
+    mode = str(settings.warmup_default_mode).strip().lower()
+    if mode == "none":
+        return None
+    if mode == "full":
+        return now - timedelta(days=len(ramp()))
+    return now  # "warm" (default)
+
+
 _TZ: dict[str, str] = {
     "JP": "Asia/Tokyo", "JAPAN": "Asia/Tokyo",
     "KR": "Asia/Seoul", "KOREA": "Asia/Seoul", "SOUTH KOREA": "Asia/Seoul",
@@ -46,16 +118,17 @@ def tz_for(country: Optional[str]) -> str:
 
 def warmup_cap(warmup_start: Optional[datetime], now: datetime) -> int:
     """Max sends allowed today given how long this domain has been warming up."""
+    curve = ramp()
     if warmup_start is None:
-        return SEND.warmup_ramp[0]
+        return curve[0]
     if warmup_start.tzinfo is None:
         warmup_start = warmup_start.replace(tzinfo=timezone.utc)
     days = (now - warmup_start).days
     if days < 0:
         return 0
-    if days < len(SEND.warmup_ramp):
-        return SEND.warmup_ramp[days]
-    return SEND.hard_daily_cap
+    if days < len(curve):
+        return curve[days]
+    return daily_cap()
 
 
 def in_send_window(
@@ -66,6 +139,7 @@ def in_send_window(
     that's Mon–Fri 09:00–17:00; `ignore_days` drops the weekday check and
     `ignore_hours` drops the time-of-day check (each independently)."""
     local = now.astimezone(ZoneInfo(tz_for(country)))
-    day_ok = ignore_days or local.weekday() in SEND.send_days
-    hour_ok = ignore_hours or SEND.send_hours[0] <= local.hour < SEND.send_hours[1]
+    hours = send_window_hours()
+    day_ok = ignore_days or local.weekday() in send_workdays()
+    hour_ok = ignore_hours or hours[0] <= local.hour < hours[1]
     return day_ok and hour_ok

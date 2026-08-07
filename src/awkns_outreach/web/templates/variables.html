@@ -113,8 +113,9 @@
       <li><b>Sender identity</b> changes do <b>not</b> affect tasks that are already
         running or paused — those keep the identity they were started with. New
         values only apply to tasks started afterwards.</li>
-      <li><b>API keys</b> and <b>AI models</b> apply globally and immediately,
-        including to tasks already in progress.</li>
+      <li><b>API keys</b>, <b>AI models</b>, and <b>sending limits</b> apply
+        globally and immediately, including to tasks already in progress.
+        (New-campaign warmup mode only affects campaigns created afterwards.)</li>
     </ul>
     <div class="flex justify-end gap-2">
       <button type="button" id="save-cancel" class="{{ btn.cls('neutral') }}">Cancel</button>

@@ -31,12 +31,34 @@ from awkns_outreach.compliance import (
 from awkns_outreach.db.models import Campaign, Event, Lead
 from awkns_outreach.identity import Identity, campaign_overrides, resolve_identity
 from awkns_outreach.send.mailer import send_outreach_email
-from awkns_outreach.sequencer.limits import SEND, in_send_window, warmup_cap
+from awkns_outreach.sequencer.limits import (
+    daily_cap,
+    in_send_window,
+    jitter_ms,
+    min_gap_ms,
+    warmup_cap,
+)
 
+# Fallback defaults (operator-overridable via settings — see _max_send_errors /
+# _stale_claim_seconds). Kept as module constants for back-compat / tests.
 # Stop retrying a lead after this many send errors at the same step.
 MAX_SEND_ERRORS = 3
 # A "sending" claim older than this is considered crashed and reclaimable.
 STALE_CLAIM_SECONDS = 10 * 60
+
+
+def _max_send_errors() -> int:
+    from awkns_outreach.config import settings
+    from awkns_outreach.sequencer.limits import _int
+
+    return _int(settings.max_send_errors, MAX_SEND_ERRORS)
+
+
+def _stale_claim_seconds() -> int:
+    from awkns_outreach.config import settings
+    from awkns_outreach.sequencer.limits import _int
+
+    return _int(settings.stale_claim_seconds, STALE_CLAIM_SECONDS)
 
 
 def step_delay_minutes(step: dict) -> int:
@@ -118,7 +140,7 @@ def process_campaign(
             summary.blocked = reason
             return summary
         # Recover leads stranded in a "sending" claim by a crashed prior run.
-        stale_before = now - timedelta(seconds=STALE_CLAIM_SECONDS)
+        stale_before = now - timedelta(seconds=_stale_claim_seconds())
         session.execute(
             update(Lead)
             .where(Lead.campaign_id == campaign.id, Lead.status == "sending",
@@ -136,7 +158,7 @@ def process_campaign(
         .where(Lead.campaign_id == campaign.id, Event.type == "sent",
                Event.created_at >= since)
     ) or 0
-    cap = min(SEND.hard_daily_cap, warmup_cap(campaign.warmup_start, now))
+    cap = min(daily_cap(), warmup_cap(campaign.warmup_start, now))
     daily_remaining = max(0, cap - sent_last_24h)
     summary.cap = cap
     summary.sent_last_24h = sent_last_24h
@@ -224,7 +246,7 @@ def process_campaign(
         # Human-scale spacing between real sends (not before the first).
         if not dry_run and real_send_done:
             gap = gap_ms if gap_ms is not None else (
-                SEND.min_gap_ms + int(random.random() * SEND.jitter_ms)
+                min_gap_ms() + int(random.random() * jitter_ms())
             )
             if gap > 0:
                 time.sleep(gap / 1000.0)
@@ -274,9 +296,9 @@ def process_campaign(
                 ) or 0
                 # Park a permanently-bad address as "failed" so it leaves the pool;
                 # otherwise release the claim for a retry next tick.
-                lead.status = "failed" if err_count >= MAX_SEND_ERRORS else "active"
+                lead.status = "failed" if err_count >= _max_send_errors() else "active"
                 session.commit()
-                if err_count >= MAX_SEND_ERRORS:
+                if err_count >= _max_send_errors():
                     summary.details.append(
                         {"email": email, "step": lead.step, "result": "failed:max_errors"}
                     )
